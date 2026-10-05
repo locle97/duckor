@@ -59,3 +59,37 @@ test("agents have valid frontmatter", () => {
     assert.match(body, /worktree/, `${file}: worktree discipline`);
   }
 });
+
+const UPSTREAM_SHA = "5bf4e78011075bcfc0dc295f0724994cd123ee71";
+const ADAPTED: Record<string, string> = {
+  "autonomous-brainstorming": "brainstorming",
+  "autonomous-writing-plans": "writing-plans",
+  "autonomous-execution": "subagent-driven-development",
+};
+
+function skillNames(): string[] {
+  return fs.readdirSync(path.join(PLUGIN, "skills")).filter((d) =>
+    fs.existsSync(path.join(PLUGIN, "skills", d, "SKILL.md")));
+}
+
+test("skills have valid frontmatter", () => {
+  const names = skillNames();
+  for (const name of Object.keys(ADAPTED)) assert.ok(names.includes(name), `missing skill ${name}`);
+  for (const name of names) {
+    const fm = frontmatter(path.join(PLUGIN, "skills", name, "SKILL.md"));
+    assert.equal(fm.name, name);
+    assert.ok(fm.description, `${name}: description`);
+  }
+});
+
+test("adapted skills record their upstream", () => {
+  const upstream = fs.readFileSync(path.join(PLUGIN, "UPSTREAM.md"), "utf8");
+  assert.ok(upstream.includes(UPSTREAM_SHA));
+  for (const [name, source] of Object.entries(ADAPTED)) {
+    const text = fs.readFileSync(path.join(PLUGIN, "skills", name, "SKILL.md"), "utf8");
+    const header = `<!-- Adapted from obra/superpowers skills/${source} @ ${UPSTREAM_SHA} -->`;
+    assert.match(text, /^---\n[\s\S]*?\n---\n/);
+    assert.ok(text.replace(/^---\n[\s\S]*?\n---\n\s*/, "").startsWith(header), `${name}: provenance header`);
+    assert.ok(upstream.includes(name) && upstream.includes(source), `UPSTREAM.md: ${name}`);
+  }
+});
