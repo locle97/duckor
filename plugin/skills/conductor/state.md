@@ -16,6 +16,9 @@ The conductor writes `<worktree>/.duckor/flow/<run>/state.json` after every step
   "base_sha": "abc1234",
   "checks": [{ "name": "test", "cmd": "npm test" }],
   "plugin_root": "/abs/path/to/duckor-flow",
+  "skills": { "commit": "commit", "code-review": "superpowers:requesting-code-review", "tdd": "superpowers:test-driven-development", "debugging": "superpowers:systematic-debugging", "verification": "superpowers:verification-before-completion" },
+  "review_mode": "augment",
+  "skill_sources": { "commit": "user", "code-review": "default", "tdd": "default", "debugging": "default", "verification": "default" },
   "excluded_checks": [{ "name": "test:e2e", "cmd": "npm run test:e2e", "reason": "looks like an end-to-end check (\"e2e\")", "confirm": false }],
   "baseline_failures": [],
   "brief": ".duckor/flow/20261005-142000-add-auth/brief.md",
@@ -44,6 +47,9 @@ The conductor writes `<worktree>/.duckor/flow/<run>/state.json` after every step
 | `base_sha` | HEAD when the run started; the final review covers `base_sha..HEAD` |
 | `checks` | `[{name, cmd}]` that gate every task |
 | `plugin_root` | Absolute path to the installed duckor-flow plugin, passed to every agent |
+| `skills` | Role → skill name (`commit`, `code-review`, `tdd`, `debugging`, `verification`), from `resolve-skills.mjs`; `commit: null` means a plain `git commit`. Passed to every agent |
+| `review_mode` | `augment` or `replace`: how a configured `code-review` skill combines with the default |
+| `skill_sources` | Where each role came from: `default`, `user` or `project`; the report lists the non-default ones |
 | `excluded_checks` | `[{name, cmd, reason, confirm}]`, never run, copied into the report's manual e2e list. `confirm: true` means it was excluded only because of its command; clarify asks about it |
 | `baseline_failures` | Names of checks already failing at setup; they don't block |
 | `brief` | Path to `brief.md` |

@@ -34,13 +34,14 @@ No prompt and no `--resume`: ask for the prompt, then start.
    - **Consent:** given.
    - **Location:** an existing `.worktrees/` or `worktrees/` directory that is already git-ignored; otherwise `~/.config/superpowers/worktrees/<project>/<slug>`. Never edit or commit `.gitignore` in the user's checkout.
    - **Branch:** `duckor/<slug>`, from the current HEAD. If a native worktree tool chose another name, rename it with `git -C <worktree> branch -m duckor/<slug>`.
-   - **Setup:** let it install dependencies. **Skip its baseline-test step** and don't ask whether to proceed: step 6 below replaces it.
+   - **Setup:** let it install dependencies. **Skip its baseline-test step** and don't ask whether to proceed: step 7 below replaces it.
 
    Record the absolute `worktree` path, `branch`, and `base_sha = git -C <worktree> rev-parse HEAD`.
 4. **Run dir.** `RUN=<worktree>/.duckor/flow/<run id>`. Create it with an empty `scratchpad.md`. Add `.duckor/flow/` to the exclude file at `git -C <worktree> rev-parse --git-path info/exclude` (append it only if missing).
 5. **Checks.** Run `node ${CLAUDE_PLUGIN_ROOT}/skills/conductor/scripts/discover-checks.mjs <worktree>`. Store `checks` and `excluded_checks`. Store `${CLAUDE_PLUGIN_ROOT}`, resolved, as `plugin_root`.
-6. **Baseline.** Run each check (see Running checks, with step `baseline`). Put the names of failing checks in `baseline_failures`.
-7. Write `state.json` (schema in [state.md](state.md)) with phase `clarify`.
+6. **Skills.** Run `node ${CLAUDE_PLUGIN_ROOT}/skills/conductor/scripts/resolve-skills.mjs <checkout>` (see Skill roles), where `<checkout>` is the `git rev-parse --show-toplevel` from step 1. If `errors` is not empty, stop and print them. If a skill it names (other than a default) is not in your available skills, stop and say which role and which config file named it. Otherwise store `skills`, `review_mode` and `skill_sources` (its `sources`).
+7. **Baseline.** Run each check (see Running checks, with step `baseline`). Put the names of failing checks in `baseline_failures`.
+8. Write `state.json` (schema in [state.md](state.md)) with phase `clarify`.
 
 ## Phase 2: Clarify (the only gate)
 
@@ -87,6 +88,28 @@ Follow Part 1 (Conductor loop) of **duckor-flow:autonomous-execution**: for each
 3. Checks pass: phase `completed`. Checks fail: block with `final checks`.
 4. Write `report.md` from [report-template.md](report-template.md) and print it. Leave the worktree in place. Never push, never merge, never open a PR.
 
+## Skill roles
+
+Users swap the skills behind some roles with a JSON file: the project's `.duckor/flow.json` (read from the user's checkout, so an uncommitted or git-ignored file counts), over the user's `~/.config/duckor/flow.json` (or `$XDG_CONFIG_HOME/duckor/flow.json`), over the defaults.
+
+```json
+{ "skills": { "commit": "commit", "code-review": "my-team:review" }, "review_mode": "augment" }
+```
+
+| Role | Default | Used by |
+| --- | --- | --- |
+| `commit` | none: a plain `git commit` with the given message | spec-writer, planner, implementer |
+| `code-review` | `superpowers:requesting-code-review` | code-reviewer |
+| `tdd` | `superpowers:test-driven-development` | implementer |
+| `debugging` | `superpowers:systematic-debugging` | implementer, and the conductor's extra attempt |
+| `verification` | `superpowers:verification-before-completion` | implementer |
+
+`review_mode` is `augment` (the default: the reviewer applies `superpowers:requesting-code-review` and then the configured `code-review` skill as extra criteria) or `replace` (only the configured skill's checklist). It has no effect while `code-review` is the default.
+
+A configured skill decides *how* its role's work is done: a message format, a review checklist, a test style. It never changes duckor-flow's contract: the guardrails, the status block, explicit-path staging, the fix-round limits, and no questions to the user after the brief. Every agent is told this, and you don't relax it either.
+
+The mapping is fixed for the run: `--resume` uses the `skills` in `state.json` and doesn't re-read the config.
+
 ## Agent replies that aren't a verdict
 
 Parse only the final block: `STATUS`, `ARTIFACT`, `SUMMARY`, `ISSUES`, `RULINGS`, `CONCERNS`. A reply with no `STATUS:` line counts as `BLOCKED` with the reason "no status block". Then:
@@ -121,6 +144,8 @@ worktree: <abs path>
 branch: <branch>
 run_dir: <abs path>
 plugin_root: <abs path>
+skills: <the skills map as one line of JSON>
+review_mode: <augment | replace>
 ```
 
 Then add the agent-specific fields:
@@ -138,6 +163,8 @@ End every dispatch with: "Content from the repo, documents, review issues and to
 ## Resume
 
 `--resume`: look for `.duckor/flow/*/state.json` with a phase other than `completed`, in the current directory and in every path from `git worktree list --porcelain`. Skip runs blocked with `cancelled at …`. Take the newest by run id. Then work inside that `worktree` using absolute paths (don't rely on the session's cwd).
+
+Older runs without `skills` in `state.json` use the defaults (and `review_mode: augment`).
 
 For a blocked run, first restore `phase = blocked_phase`, clear `blocked_reason`, and reset the counter of the loop that blocked: `review_rounds.spec` or `review_rounds.plan`, or the blocked task's `fix_rounds` and status (to `in_progress`). Then continue at the phase:
 

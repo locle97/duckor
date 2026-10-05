@@ -7,6 +7,7 @@
 - Branch: `<branch>`, base `<base_sha>` → head `<HEAD>`
 - Worktree: `<worktree>`
 - Spec: `<spec>` · Plan: `<plan>`
+- Skills: <each non-default role as `role: skill (user|project)`, plus `review_mode` if `replace`; or "defaults">
 
 ## What was built
 
