@@ -1,0 +1,10 @@
+{
+  "name": "duckor-flow",
+  "version": "0.1.0",
+  "description": "Ralph-style autonomous flow for Claude Code: /duckor \"<prompt>\" clarifies once, then writes a spec, a plan and the implementation with per-task review, ending in commits on a worktree branch and a report. Builds on superpowers.",
+  "author": { "name": "Loc Le" },
+  "homepage": "https://github.com/locle97/duckor",
+  "repository": "https://github.com/locle97/duckor",
+  "license": "MIT",
+  "keywords": ["autonomous", "workflow", "agents", "superpowers", "ralph"]
+}
