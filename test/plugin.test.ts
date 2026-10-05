@@ -35,3 +35,27 @@ test("manifests point at the plugin", () => {
   assert.equal(plugin.version, "0.1.0");
   assert.ok(plugin.description);
 });
+
+const AGENTS: Record<string, { tools: string; model: string }> = {
+  "spec-writer": { tools: "Read, Grep, Glob, Write, Edit, Bash", model: "opus" },
+  "doc-reviewer": { tools: "Read, Grep, Glob", model: "opus" },
+  planner: { tools: "Read, Grep, Glob, Write, Edit, Bash", model: "opus" },
+  implementer: { tools: "Read, Edit, Write, Glob, Grep, Bash", model: "sonnet" },
+  "code-reviewer": { tools: "Read, Grep, Glob, Bash", model: "opus" },
+};
+
+test("agents have valid frontmatter", () => {
+  const dir = path.join(PLUGIN, "agents");
+  assert.deepEqual(fs.readdirSync(dir).sort(), Object.keys(AGENTS).map((a) => `${a}.md`).sort());
+  for (const [name, want] of Object.entries(AGENTS)) {
+    const file = path.join(dir, `${name}.md`);
+    const fm = frontmatter(file);
+    assert.equal(fm.name, name, file);
+    assert.ok(fm.description, `${file}: description`);
+    assert.equal(fm.tools, want.tools, `${file}: tools`);
+    assert.equal(fm.model, want.model, `${file}: model`);
+    const body = fs.readFileSync(file, "utf8");
+    assert.match(body, /STATUS:/, `${file}: status block`);
+    assert.match(body, /worktree/, `${file}: worktree discipline`);
+  }
+});
