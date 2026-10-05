@@ -1,0 +1,51 @@
+# state.json
+
+The conductor writes `<worktree>/.duckor/flow/<run>/state.json` after every step. Paths are relative to `worktree` unless noted.
+
+```json
+{
+  "version": 1,
+  "run": "20261005-142000-add-auth",
+  "prompt": "add auth",
+  "phase": "execute",
+  "blocked_reason": null,
+  "options": { "confirm_spec": false },
+  "branch": "duckor/add-auth",
+  "worktree": "/abs/path/to/worktree",
+  "base_sha": "abc1234",
+  "checks": [{ "name": "test", "cmd": "npm test" }],
+  "excluded_checks": [{ "name": "test:e2e", "cmd": "npm run test:e2e", "reason": "looks like an end-to-end check (\"e2e\")" }],
+  "baseline_failures": [],
+  "brief": ".duckor/flow/20261005-142000-add-auth/brief.md",
+  "spec": "docs/superpowers/specs/2026-10-05-add-auth-design.md",
+  "plan": "docs/superpowers/plans/2026-10-05-add-auth.md",
+  "review_rounds": { "spec": 1, "plan": 0, "final": 0 },
+  "tasks": [
+    { "n": 1, "title": "Token model", "status": "done", "base": "abc1234", "head": "def5678", "fix_rounds": 1, "concerns": [] }
+  ],
+  "decisions": ["Chose JWT over sessions — brief says stateless API — swap middleware if wrong"],
+  "minor_issues": ["src/auth.ts:40 magic number for token TTL"]
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `version` | Schema version, `1` |
+| `run` | Run id `<YYYYMMDD-HHMMSS>-<slug>`, also the run dir name |
+| `prompt` | The user's original prompt, verbatim |
+| `phase` | `setup`, `clarify`, `spec`, `plan`, `execute`, `finish`, `completed`, `blocked` |
+| `blocked_reason` | `null`, or e.g. `spec_review`, `plan_review`, `task 3`, `task 3 review`, `final checks`, `cancelled at brief` |
+| `options` | Flags for the run: `confirm_spec` |
+| `branch` | `duckor/<slug>` |
+| `worktree` | Absolute path to the worktree |
+| `base_sha` | HEAD when the run started; the final review covers `base_sha..HEAD` |
+| `checks` | `[{name, cmd}]` that gate every task |
+| `excluded_checks` | `[{name, cmd, reason}]`, never run, copied into the report's manual e2e list |
+| `baseline_failures` | Names of checks already failing at setup; they don't block |
+| `brief` | Path to `brief.md` |
+| `spec` | Spec path, once written |
+| `plan` | Plan path, once written |
+| `review_rounds` | Fix rounds used per document review and for the final review |
+| `tasks` | One entry per plan task: `n`, `title`, `status` (`pending`, `in_progress`, `done`, `blocked`), `base`, `head`, `fix_rounds`, `concerns` |
+| `decisions` | Every ruling made for the user, `<decision> — <why> — <cost if wrong>` |
+| `minor_issues` | Minor review findings, reported but not fixed |

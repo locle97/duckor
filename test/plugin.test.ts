@@ -93,3 +93,68 @@ test("adapted skills record their upstream", () => {
     assert.ok(upstream.includes(name) && upstream.includes(source), `UPSTREAM.md: ${name}`);
   }
 });
+
+const KNOWN_SUPERPOWERS = [
+  "brainstorming", "dispatching-parallel-agents", "executing-plans", "finishing-a-development-branch",
+  "receiving-code-review", "requesting-code-review", "subagent-driven-development", "systematic-debugging",
+  "test-driven-development", "using-git-worktrees", "verification-before-completion", "writing-plans",
+];
+
+function markdownFiles(dir: string): string[] {
+  return fs.readdirSync(dir, { withFileTypes: true, recursive: true })
+    .filter((e) => e.isFile() && e.name.endsWith(".md"))
+    .map((e) => path.join(e.parentPath, e.name));
+}
+
+function refs(text: string, prefix: string): Set<string> {
+  return new Set([...text.matchAll(new RegExp(`\\b${prefix}:([a-z][a-z0-9-]*)`, "g"))].map((m) => m[1]));
+}
+
+const CONDUCTOR = path.join(PLUGIN, "skills/conductor");
+
+test("the conductor dispatches every agent and only real ones", () => {
+  const text = fs.readFileSync(path.join(CONDUCTOR, "SKILL.md"), "utf8");
+  const agents = [...refs(text, "duckor-flow")].filter((r) => !skillNames().includes(r)).sort();
+  assert.deepEqual(agents, Object.keys(AGENTS).sort());
+});
+
+test("every plugin ref resolves", () => {
+  const skills = skillNames();
+  for (const file of markdownFiles(PLUGIN)) {
+    const text = fs.readFileSync(file, "utf8");
+    for (const r of refs(text, "duckor-flow")) {
+      assert.ok(skills.includes(r) || r in AGENTS, `${file}: unknown duckor-flow:${r}`);
+    }
+    for (const r of refs(text, "superpowers")) {
+      assert.ok(KNOWN_SUPERPOWERS.includes(r), `${file}: unknown superpowers:${r}`);
+    }
+  }
+});
+
+test("the command loads the conductor", () => {
+  const file = path.join(PLUGIN, "commands/duckor.md");
+  const fm = frontmatter(file);
+  assert.ok(fm.description);
+  assert.ok(fm["argument-hint"]);
+  const body = fs.readFileSync(file, "utf8");
+  assert.ok(body.includes("duckor-flow:conductor"));
+  assert.ok(body.includes("$ARGUMENTS"));
+});
+
+test("state.md documents every state field", () => {
+  const text = fs.readFileSync(path.join(CONDUCTOR, "state.md"), "utf8");
+  for (const key of [
+    "version", "run", "prompt", "phase", "blocked_reason", "options", "branch", "worktree", "base_sha",
+    "checks", "excluded_checks", "baseline_failures", "brief", "spec", "plan", "review_rounds", "tasks",
+    "decisions", "minor_issues",
+  ]) assert.ok(text.includes(`\`${key}\``), `state.md: ${key}`);
+});
+
+test("the report template has the seven sections", () => {
+  const text = fs.readFileSync(path.join(CONDUCTOR, "report-template.md"), "utf8");
+  const headings = [...text.matchAll(/^## (.+)$/gm)].map((m) => m[1]);
+  assert.deepEqual(headings, [
+    "Outcome", "What was built", "Decisions made for you", "Deviations and concerns", "Checks",
+    "Manual e2e checklist", "Next steps",
+  ]);
+});
