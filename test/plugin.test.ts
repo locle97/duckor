@@ -40,6 +40,7 @@ const AGENTS: Record<string, { tools: string; model: string }> = {
   "spec-writer": { tools: "Read, Grep, Glob, Write, Edit, Bash, Skill", model: "opus" },
   "doc-reviewer": { tools: "Read, Grep, Glob", model: "opus" },
   planner: { tools: "Read, Grep, Glob, Write, Edit, Bash, Skill", model: "opus" },
+  "test-planner": { tools: "Read, Grep, Glob, Write, Edit, Bash, Skill", model: "opus" },
   implementer: { tools: "Read, Edit, Write, Glob, Grep, Bash, Skill", model: "sonnet" },
   "code-reviewer": { tools: "Read, Grep, Glob, Bash, Skill", model: "opus" },
 };
@@ -149,7 +150,7 @@ test("state.md documents every state field", () => {
   for (const key of [
     "version", "run", "prompt", "phase", "blocked_reason", "blocked_phase", "options", "plugin_root", "skills", "review_mode",
     "skill_sources", "branch", "worktree", "base_sha",
-    "checks", "excluded_checks", "baseline_failures", "brief", "spec", "plan", "review_rounds", "tasks",
+    "checks", "excluded_checks", "baseline_failures", "brief", "spec", "plan", "test_plan", "test_scenarios", "review_rounds", "tasks",
     "decisions", "minor_issues",
   ]) assert.ok(text.includes(`\`${key}\``), `state.md: ${key}`);
 });
@@ -189,4 +190,21 @@ test("agents that load skills are given the skills map", () => {
     assert.match(body, /- `skills`, `review_mode`:/, `${name}: skills input`);
     assert.match(body, /## Skills/, `${name}: skills contract`);
   }
+});
+
+test("the spec, the plan and the test plan share contracts", () => {
+  const read = (p: string) => fs.readFileSync(path.join(PLUGIN, p), "utf8");
+  const spec = read("skills/autonomous-brainstorming/SKILL.md");
+  const sections = [...spec.slice(spec.indexOf("**Required sections")).matchAll(/^\d+\. \*\*(.+?)\*\*/gm)].map((m) => m[1]);
+  assert.deepEqual(sections, [
+    "Summary", "Decisions", "Architecture / Components", "Contracts", "Data flow", "Error handling", "Testing", "Out of scope",
+  ]);
+  assert.match(spec, /- SC1: /, "brief numbers its success criteria");
+  assert.match(read("skills/autonomous-writing-plans/SKILL.md"), /^\*\*Contracts:\*\*/m, "plan tasks list contracts");
+  const tests = read("skills/autonomous-writing-test-plans/SKILL.md");
+  for (const heading of ["## Environment", "## Test data", "## Coverage", "## Scenarios", "## Regression", "## Out of scope"]) {
+    assert.ok(tests.includes(heading), `test plan template: ${heading}`);
+  }
+  assert.match(read("agents/test-planner.md"), /Don't read the implementation plan/);
+  assert.match(read("agents/doc-reviewer.md"), /\*\*mode `test-plan`:\*\*/);
 });
