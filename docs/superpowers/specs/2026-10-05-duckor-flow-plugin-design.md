@@ -28,6 +28,7 @@ The CLI and its roadmap are unaffected. The plugin is the interactive path; the 
 .claude-plugin/marketplace.json         marketplace "duckor", one plugin: duckor-flow -> ./plugin
 plugin/
   .claude-plugin/plugin.json            name: duckor-flow
+  UPSTREAM.md                           provenance of the adapted superpowers skills
   commands/duckor.md                    /duckor "<prompt>" [--resume] [--confirm-spec]
   skills/
     conductor/
@@ -53,8 +54,9 @@ All steps run in the main session under `conductor`. Each arrow into an agent is
 ```
 /duckor "<prompt>"
  1. Setup     preflight (git repo, superpowers present); slug from prompt;
-              worktree + branch duckor/<slug> (superpowers:using-git-worktrees);
-              run dir .duckor/flow/<run>/; discover checks; run checks once -> baseline
+              worktree + branch duckor/<slug> (superpowers:using-git-worktrees, which
+              also installs dependencies); run dir .duckor/flow/<run>/;
+              discover checks; run checks once -> baseline
  2. Clarify   autonomous-brainstorming: read repo context, ask 3-6 questions in at most
               2 AskUserQuestion calls, write brief.md, show it, user approves   <- gate
  3. Spec      spec-writer -> doc-reviewer(spec) -> fix loop (max 3 rounds)
@@ -65,6 +67,10 @@ All steps run in the main session under `conductor`. Each arrow into an agent is
  6. Finish    code-reviewer(final) over base..HEAD -> one fix round -> checks -> report.md
 ```
 
+Preflight detects superpowers by checking that `superpowers:using-git-worktrees` is in the session's list of available skills. The worktree is created before clarify so that baseline checks run in the same tree the work will use. If the user abandons the run at the brief gate, the worktree and branch are left in place and the conductor prints the `git worktree remove` command for them.
+
+**Worktree discipline.** Subagents start in the session's working directory, which may not be the worktree. Every dispatch therefore passes `worktree` (absolute path) and `branch`, and every path in a dispatch is absolute. Writers run git as `git -C <worktree>`, and before their first write they verify that `git -C <worktree> branch --show-current` equals `branch`; on a mismatch they return `BLOCKED`. The conductor runs its own checks and git commands the same way.
+
 If the user rejects the brief, the conductor asks what to change, revises the brief, and shows it again. Clarify is the only phase that talks to the user (plus the optional spec gate).
 
 Run dir: `.duckor/flow/<YYYYMMDD-HHMMSS-slug>/` inside the worktree, holding `state.json`, `brief.md`, `scratchpad.md`, `checks-*.log`, `report.md`. The conductor adds `.duckor/flow/` to the exclude file (`git rev-parse --git-path info/exclude`), so it never shows up in status or a commit.
@@ -73,7 +79,7 @@ Committed artifacts: the spec at `docs/superpowers/specs/<date>-<slug>-design.md
 
 ## Agent contract
 
-Agents receive file paths and short parameters in the dispatch prompt, never the conductor's history. Every agent ends its reply with this block, and the conductor parses only this:
+Every dispatch includes `worktree` and `branch` (see Worktree discipline). Agents receive file paths and short parameters in the dispatch prompt, never the conductor's history. Every agent ends its reply with this block, and the conductor parses only this:
 
 ```
 STATUS: DONE | DONE_WITH_CONCERNS | APPROVED | NEEDS_FIX | BLOCKED
@@ -81,7 +87,13 @@ ARTIFACT: <path, commit sha, or ->
 SUMMARY: <at most 5 lines>
 ISSUES:
 1. <severity: critical|important|minor> <file:line or section> <issue>
+RULINGS:
+- <decision> — <why> — <cost if wrong>
+CONCERNS:
+- <concern>
 ```
+
+`ISSUES` is for reviewers; `RULINGS` and `CONCERNS` are for writers. Empty sections may be omitted. The conductor appends `RULINGS` to `state.json.decisions` and `CONCERNS` to the current task's `concerns` (or to `decisions` outside execute).
 
 Writers (spec-writer, planner, implementer) return `DONE`, `DONE_WITH_CONCERNS` or `BLOCKED`. Reviewers return `APPROVED` or `NEEDS_FIX`; only critical and important issues make `NEEDS_FIX`, minor issues go in the report. A reply without a parseable block counts as `BLOCKED` with reason "no status block".
 
@@ -90,7 +102,7 @@ Writers (spec-writer, planner, implementer) return `DONE`, `DONE_WITH_CONCERNS` 
 | `spec-writer` | brief.md, run dir, target spec path, optional issue list | Spec, committed | Read, Grep, Glob, Write, Edit, Bash | opus |
 | `doc-reviewer` | doc path, mode `spec` or `plan`, brief.md (and spec path in plan mode) | Verdict + issues | Read, Grep, Glob | opus |
 | `planner` | spec path, target plan path, checks, optional issue list | Plan, committed | Read, Grep, Glob, Write, Edit, Bash | opus |
-| `implementer` | plan path, task number, spec path, scratchpad, checks, optional issue list and check output | Code and tests, checks green, committed | Read, Edit, Write, Glob, Grep, Bash | sonnet |
+| `implementer` | plan path, task number or `final`, spec path, scratchpad, checks, baseline failures, optional issue list and check output | Code and tests, checks green (except baseline failures), committed | Read, Edit, Write, Glob, Grep, Bash | sonnet |
 | `code-reviewer` | base and head SHAs, mode `task` (task text) or `final` (spec and plan), checks | Verdict + issues | Read, Grep, Glob, Bash | opus |
 
 Reviewers never edit files. Their prompts say so, and `doc-reviewer` has no write or shell tools at all. `code-reviewer` needs Bash only for `git diff`, `git log`, `git show` and the checks.
@@ -105,11 +117,11 @@ Agent prompts name the superpowers skills they follow:
 
 **`conductor`** owns the flow above, `state.json` reads and writes (after every step), the loop limits, the dispatch templates for each agent, check runs, and the report. It is the only component that sees the whole run.
 
-**`autonomous-brainstorming`**, adapted from superpowers brainstorming. Part 1, clarify (run by the conductor): explore context, ask one batch of questions (multiple choice where possible; at most 4 per AskUserQuestion call, at most 2 calls), write `brief.md` with Goal, In scope, Out of scope, Constraints, Success criteria, Assumptions. Part 2, spec rules (read by spec-writer): spec sections (Summary, Decisions, Architecture/Components, Data flow, Error handling, Testing, Out of scope), YAGNI, every brief assumption carried as an explicit decision. No visual companion, no section-by-section approval, no handoff to writing-plans.
+**`autonomous-brainstorming`**, adapted from superpowers brainstorming. Part 1, clarify (run by the conductor): explore context, ask one batch of 3-6 questions, including the "no checks found" question when it applies (multiple choice where possible; at most 4 per AskUserQuestion call, at most 2 calls), write `brief.md` with Goal, In scope, Out of scope, Constraints, Success criteria, Assumptions. Part 2, spec rules (read by spec-writer): spec sections (Summary, Decisions, Architecture/Components, Data flow, Error handling, Testing, Out of scope), YAGNI, every brief assumption carried as an explicit decision. No visual companion, no section-by-section approval, no handoff to writing-plans.
 
 **`autonomous-writing-plans`**, adapted from superpowers writing-plans. Same plan shape (goal, global constraints, numbered tasks with files, steps in RED-GREEN order, `Expected:` lines, commit step), minus the execution-choice handoff. Additions: each task lists the check commands that prove it; a task never adds or runs e2e tests; e2e items go to a final `## Manual e2e` section that the report copies.
 
-**`autonomous-execution`**, adapted from superpowers subagent-driven-development and executing-plans. Per-task loop, fix-loop rules, ruling format (`Ruling: <decision> — <why> — <cost if wrong>`, written to `state.json.decisions`), and the stop conditions below. No pauses between tasks.
+**`autonomous-execution`**, adapted from superpowers subagent-driven-development and executing-plans. Per-task loop, fix-loop rules, ruling format (one `RULINGS:` line per ruling, `- <decision> — <why> — <cost if wrong>`, the same format as the status block; the conductor copies them to `state.json.decisions`), and the stop conditions below. No pauses between tasks.
 
 ## Check discovery
 
@@ -156,6 +168,8 @@ The conductor stores the result in `state.json`. Check commands run with `bash -
 }
 ```
 
+Paths in `state.json` (`brief`, `spec`, `plan`) are relative to `worktree`; the conductor resolves them to absolute paths before every dispatch.
+
 `/duckor --resume` finds the newest `.duckor/flow/*/state.json` whose phase is not `completed`, searching the current directory and the worktrees listed by `git worktree list`. It switches to that worktree and continues at the recorded phase. A task with status `in_progress` restarts: its `base` is known, and the implementer is told to inspect existing commits since `base` and finish the task, not redo it.
 
 ## Limits and failure handling
@@ -169,7 +183,7 @@ The conductor stores the result in `state.json`. Check commands run with `bash -
 | Implementer `BLOCKED`, or checks still red after 3 fix rounds | One extra attempt telling the implementer to use superpowers:systematic-debugging with the check output. Still failing: `blocked: task <n>` |
 | Implementer says `DONE` but checks fail | The conductor always re-runs the checks itself; a failure counts as a fix round |
 | Code review still `NEEDS_FIX` after 3 rounds | `blocked: task <n> review` |
-| Final review finds critical or important issues | One fix round (implementer with the issues, then checks). Issues still open go in the report; the run is still `completed` if checks pass |
+| Final review finds critical or important issues | One fix round (implementer dispatched with task `final`, the issue list, spec and plan; then checks). Issues still open go in the report; the run is still `completed` if checks pass |
 | Session interrupted | `/duckor --resume` |
 
 `blocked` still writes `report.md`. Completed tasks stay committed.
@@ -208,7 +222,7 @@ Structural tests in the existing `node --test` suite, no new dependencies:
   - Every `superpowers:<skill>` named anywhere in the plugin is in a fixed list of known superpowers skills; every `duckor-flow:<skill>` exists.
   - `commands/duckor.md` references `duckor-flow:conductor`.
 - `test/discover-checks.test.ts`: fixture repos built in a temp dir: npm with an e2e script, `test` script that runs playwright, pnpm lockfile, Makefile, Cargo, go, `## Checks` in CLAUDE.md, nothing at all.
-- `skills-lock.json` gets entries for the three adapted skills with `source: obra/superpowers`, so their upstream is recorded.
+- Provenance: each adapted SKILL.md has, right after its frontmatter, `<!-- Adapted from obra/superpowers skills/<name> @ <commit> -->`, and `plugin/UPSTREAM.md` lists the three sources and what was changed. `skills-lock.json` is not touched, because it drives skill installation into `.agents/skills`. The structural test checks that each adapted skill has the header.
 - Manual smoke test, documented in the README: run `/duckor` on a tiny task in a scratch repo. Not in CI, because it needs a live Claude session, like the CLI's `DUCKOR_E2E` test.
 
 `tsconfig.json` includes only `src` and `test`, so the `.mjs` script is imported by the test through its path; typecheck allows that with a small `.d.mts` declaration next to the script.
