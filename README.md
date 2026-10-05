@@ -78,6 +78,45 @@ Only `solo` ships today.
 | `code-assist` | planner → builder → reviewer |
 | `debug` | reproduce → fix → verify |
 
+## Claude Code plugin: duckor-flow
+
+The repo also ships a Claude Code plugin that runs the same idea interactively. Give it one prompt. It asks one round of clarifying questions, then on its own writes a spec, writes a plan, and implements the plan task by task, with checks and a review after each task. It finishes with commits on a feature branch in a git worktree and a report. It never runs end-to-end tests. Instead, it lists them for you to run.
+
+It needs the [superpowers](https://github.com/obra/superpowers) plugin. Install both:
+
+```text
+/plugin install superpowers@claude-plugins-official
+/plugin marketplace add locle97/duckor
+/plugin install duckor-flow@duckor
+```
+
+Usage:
+
+```text
+/duckor "add rate limiting to the public API"
+/duckor "..." --confirm-spec   # also pause for your approval of the written spec
+/duckor --resume               # continue the newest unfinished run
+```
+
+```
+setup     worktree + branch duckor/<slug>, discover checks (e2e excluded), baseline run
+clarify   3-6 questions in one round -> brief.md -> you approve      (the only gate)
+spec      spec-writer -> doc-reviewer -> fix loop (max 3)
+plan      planner -> doc-reviewer -> fix loop (max 3)
+execute   per task: implementer -> checks (run by the conductor) -> code-reviewer -> fix loop (max 3)
+finish    whole-branch review -> one fix round -> checks -> report.md
+```
+
+| Part | Name |
+| --- | --- |
+| Command | `/duckor` |
+| Skills | `conductor` (the orchestrator), `autonomous-brainstorming`, `autonomous-writing-plans`, `autonomous-execution` (adapted from superpowers; see [`plugin/UPSTREAM.md`](plugin/UPSTREAM.md)) |
+| Agents | `spec-writer`, `doc-reviewer`, `planner`, `implementer`, `code-reviewer` |
+
+Checks come from a `## Checks` section in `CLAUDE.md` or `AGENTS.md` (lines like ``- `test`: `npm test` ``). Without one, they're inferred from `package.json`, `Makefile`, `pyproject.toml`, `Cargo.toml` or `go.mod`. Each run keeps `state.json`, `brief.md`, `scratchpad.md`, check logs and `report.md` in `.duckor/flow/<run>/` inside the worktree. That directory is git-excluded. The plugin never pushes, never uses `--no-verify`, and never weakens tests to get green. The design is in [the plugin spec](docs/superpowers/specs/2026-10-05-duckor-flow-plugin-design.md).
+
+**Smoke test (manual).** In a scratch git repo with an npm `test` script, run `/duckor "add a --version flag"`. Answer the questions and approve the brief. Then check that the `duckor/<slug>` branch has a spec commit, a plan commit and the task commits, and that `report.md` lists the decisions and a manual e2e section. CI covers only the plugin's structure and its check discovery (`test/plugin.test.ts`, `test/discover-checks.test.ts`).
+
 ## Configuration
 
 Today a `duckor.yml` takes `loop`, `agent`, `guardrails` and exactly one hat; see [`presets/solo.yml`](presets/solo.yml). The full v1 shape *(planned)*, which `duckor init` will write, adds gates, commits and multiple hats:

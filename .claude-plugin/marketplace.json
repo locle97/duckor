@@ -1,0 +1,15 @@
+{
+  "name": "duckor",
+  "owner": { "name": "Loc Le" },
+  "metadata": {
+    "description": "Duckor plugins for Claude Code"
+  },
+  "plugins": [
+    {
+      "name": "duckor-flow",
+      "source": "./plugin",
+      "description": "One prompt to a reviewed, committed feature branch: clarify once, then spec, plan, implement and review autonomously (no e2e).",
+      "category": "development"
+    }
+  ]
+}
