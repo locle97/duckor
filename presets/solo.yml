@@ -1,0 +1,31 @@
+# The classic Ralph loop: one hat that works the task a step at a time until it is done.
+loop:
+  starting_event: work.start
+  completion_event: LOOP_COMPLETE
+  max_iterations: 50
+  max_runtime_minutes: 240
+  max_cost_usd: 20
+  max_failures: 3
+
+agent:
+  model: sonnet
+  allowed_tools: [Read, Edit, Write, Glob, Grep]
+  timeout_minutes: 20
+
+guardrails:
+  - "Fresh context each iteration: re-read the scratchpad before doing anything."
+  - "Do one focused step per iteration."
+
+hats:
+  builder:
+    name: "🔨 Builder"
+    description: "Works the task one step at a time"
+    triggers: [work.start, work.continue]
+    publishes: [work.continue, LOOP_COMPLETE]
+    instructions: |
+      If the scratchpad has no plan yet, write a short checklist plan for the task into it.
+      Otherwise pick the first unchecked item, implement it, and check your work as far as
+      your tools allow. Mark the item done in the scratchpad and note anything the next
+      iteration needs to know.
+      Publish `work.continue` while items remain. Publish `LOOP_COMPLETE` only when every
+      item is done and checked.
