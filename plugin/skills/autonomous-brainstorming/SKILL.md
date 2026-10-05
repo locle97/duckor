@@ -23,6 +23,7 @@ If the prompt describes several independent subsystems, say so in the brief and 
 
 - Ask **3–6 questions** in total, in **at most 2** AskUserQuestion calls (at most 4 questions per call).
 - If the conductor reports **no checks found**, one of these questions must be: "No checks found. Which command verifies this project?" Offer the likeliest candidates as options. It counts toward the 6.
+- If the conductor reports an excluded check with `confirm: true` (a normal check whose command only *looks* like e2e, e.g. `npm test` running `jest --selectProjects integration`), ask whether to keep it as a check. It also counts toward the 6.
 - Ask only about what changes the design: purpose and users, scope edges, constraints (compatibility, dependencies, performance), behavior on the important error cases, and what "done" means.
 - Prefer multiple choice. Put your recommended option first and mark it "(Recommended)".
 - Don't ask about what you can decide by convention or from the repo. Decide those, and list them as assumptions.

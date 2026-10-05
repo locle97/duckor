@@ -115,3 +115,37 @@ test("CLI prints JSON", () => {
   const out = execFileSync(process.execPath, [SCRIPT, dir], { encoding: "utf8" });
   assert.deepEqual(JSON.parse(out), discoverChecks(dir));
 });
+
+test("e2e words after an ignore flag do not exclude a unit test script", () => {
+  const d = discoverChecks(repo({
+    "package.json": pkg({ test: "jest --testPathIgnorePatterns e2e", unit: "vitest --exclude=**/e2e/**" }),
+  }));
+  assert.deepEqual(d.checks, [{ name: "test", cmd: "npm test" }]);
+  assert.deepEqual(d.excluded, []);
+});
+
+test("a command-only exclusion of a candidate is flagged for confirmation", () => {
+  const d = discoverChecks(repo({ "package.json": pkg({ test: "playwright test", "test:e2e": "cypress run" }) }));
+  assert.deepEqual(d.excluded.map((e) => [e.name, e.confirm]), [["test", true], ["test:e2e", false]]);
+});
+
+test("an empty or fenced Checks section falls through or skips the fence", () => {
+  const empty = discoverChecks(repo({ "CLAUDE.md": "## Checks\n\nNone yet.\n", "go.mod": "module x\n" }));
+  assert.equal(empty.source, "inferred");
+  const fenced = discoverChecks(repo({
+    "CLAUDE.md": "## Checks\n```sh\n# unit\nnpm test\n```\n- `test`: `npm test`\n",
+  }));
+  assert.deepEqual(fenced.checks, [{ name: "test", cmd: "npm test" }]);
+});
+
+test("an ecosystem with only exclusions does not win; its exclusions are kept", () => {
+  const d = discoverChecks(repo({ "package.json": pkg({ "test:e2e": "playwright test" }), Makefile: "test:\n\tgo test\n" }));
+  assert.deepEqual(d.checks, [{ name: "test", cmd: "make test" }]);
+  assert.deepEqual(d.excluded.map((e) => e.name), ["test:e2e"]);
+});
+
+test("Make recipes are inspected and lowercase makefile is found", () => {
+  const d = discoverChecks(repo({ makefile: "test:\n\tnpx playwright test\nlint:\n\truff .\n.PHONY: test lint\n" }));
+  assert.deepEqual(d.checks, [{ name: "lint", cmd: "make lint" }]);
+  assert.deepEqual(d.excluded.map((e) => [e.name, e.confirm]), [["test", true]]);
+});

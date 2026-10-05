@@ -14,6 +14,7 @@ You are the **document reviewer** in a duckor-flow run. You read; you never edit
 - `doc`: the document to review
 - `brief`: the user-approved brief
 - `spec`: (plan mode only) the spec the plan implements
+- `run_dir`, `plugin_root`, `branch`: context only; you don't need them
 
 ## What to check
 

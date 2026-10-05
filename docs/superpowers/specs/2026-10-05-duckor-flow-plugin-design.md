@@ -99,13 +99,13 @@ Writers (spec-writer, planner, implementer) return `DONE`, `DONE_WITH_CONCERNS` 
 
 | Agent | Input | Output | Tools | Model |
 | --- | --- | --- | --- | --- |
-| `spec-writer` | brief.md, run dir, target spec path, optional issue list | Spec, committed | Read, Grep, Glob, Write, Edit, Bash | opus |
+| `spec-writer` | brief.md, run dir, target spec path, optional issue list | Spec, committed | Read, Grep, Glob, Write, Edit, Bash, Skill | opus |
 | `doc-reviewer` | doc path, mode `spec` or `plan`, brief.md (and spec path in plan mode) | Verdict + issues | Read, Grep, Glob | opus |
-| `planner` | spec path, target plan path, checks, optional issue list | Plan, committed | Read, Grep, Glob, Write, Edit, Bash | opus |
-| `implementer` | plan path, task number or `final`, spec path, scratchpad, checks, baseline failures, optional issue list and check output | Code and tests, checks green (except baseline failures), committed | Read, Edit, Write, Glob, Grep, Bash | sonnet |
-| `code-reviewer` | base and head SHAs, mode `task` (task text) or `final` (spec and plan), checks | Verdict + issues | Read, Grep, Glob, Bash | opus |
+| `planner` | spec path, target plan path, checks, optional issue list | Plan, committed | Read, Grep, Glob, Write, Edit, Bash, Skill | opus |
+| `implementer` | plan path, task number or `final`, spec path, scratchpad, checks, baseline failures, optional issue list and check output | Code and tests, checks green (except baseline failures), committed | Read, Edit, Write, Glob, Grep, Bash, Skill | sonnet |
+| `code-reviewer` | base and head SHAs, mode `task` (task text) or `final` (spec and plan), checks | Verdict + issues | Read, Grep, Glob, Bash, Skill | opus |
 
-Reviewers never edit files. Their prompts say so, and `doc-reviewer` has no write or shell tools at all. `code-reviewer` needs Bash only for `git diff`, `git log`, `git show` and the checks.
+Agents that name skills have the `Skill` tool to load them. Every dispatch also passes `plugin_root`, so an agent can Read a duckor-flow skill file if the Skill tool can't load it. Reviewers never edit files. Their prompts say so, and `doc-reviewer` has no write or shell tools at all. `code-reviewer` needs Bash only for `git diff`, `git log`, `git show` and the checks.
 
 Agent prompts name the superpowers skills they follow:
 
@@ -134,7 +134,8 @@ Agent prompts name the superpowers skills they follow:
    - `pyproject.toml` -> `pytest` if pytest is configured; `ruff check .` if ruff is configured.
    - `Cargo.toml` -> `cargo test`, `cargo clippy`.
    - `go.mod` -> `go test ./...`, `go vet ./...`.
-3. Exclusion: any candidate whose name or command matches `/e2e|playwright|cypress|integration|acceptance/i` goes to `excluded` with a reason. A `test` script whose command matches is excluded as a whole.
+3. Exclusion: any candidate whose name or command matches `/e2e|playwright|cypress|integration|acceptance/i` goes to `excluded` with a reason. A `test` script whose command matches is excluded as a whole. Words that follow an ignore flag (`--testPathIgnorePatterns e2e`, `--exclude=…`, `!pattern`) don't count. A candidate excluded only because of its command gets `confirm: true`, and the clarify round asks the user whether to keep it. Make targets are judged by name and recipe.
+4. Precedence among ecosystems: the first one that yields at least one check wins; exclusions from every ecosystem are kept. A `## Checks` section with no parseable items falls through to inference. Fenced code blocks inside it are skipped.
 
 Nothing found means `checks: []`. The conductor then adds a question to the clarify round ("No checks found. Which command verifies this project?"), and the answer is recorded as a check. If the user gives none, the run continues with review as the only backpressure, and the report says so.
 
@@ -151,6 +152,7 @@ The conductor stores the result in `state.json`. Check commands run with `bash -
   "prompt": "add auth",
   "phase": "setup|clarify|spec|plan|execute|finish|completed|blocked",
   "blocked_reason": null,
+  "blocked_phase": null,
   "options": { "confirm_spec": false },
   "branch": "duckor/add-auth",
   "worktree": "/abs/path",
@@ -170,7 +172,7 @@ The conductor stores the result in `state.json`. Check commands run with `bash -
 
 Paths in `state.json` (`brief`, `spec`, `plan`) are relative to `worktree`; the conductor resolves them to absolute paths before every dispatch.
 
-`/duckor --resume` finds the newest `.duckor/flow/*/state.json` whose phase is not `completed`, searching the current directory and the worktrees listed by `git worktree list`. It switches to that worktree and continues at the recorded phase. A task with status `in_progress` restarts: its `base` is known, and the implementer is told to inspect existing commits since `base` and finish the task, not redo it.
+Blocking sets `blocked_phase` to the phase the run was in. `/duckor --resume` also picks up blocked runs (except ones cancelled by the user): it restores `blocked_phase` and resets the counter of the loop that blocked. It finds the newest `.duckor/flow/*/state.json` whose phase is not `completed`, searching the current directory and the worktrees listed by `git worktree list`. It switches to that worktree and continues at the recorded phase. A task with status `in_progress` restarts: its `base` is known, and the implementer is told to inspect existing commits since `base` and finish the task, not redo it.
 
 ## Limits and failure handling
 
@@ -180,6 +182,9 @@ Paths in `state.json` (`brief`, `spec`, `plan`) are relative to `worktree`; the 
 | No checks found | Ask in the clarify round (see Check discovery) |
 | Checks red before any change | Record failing check names in `baseline_failures`. Later, only checks not in the baseline block; the report lists the baseline |
 | Doc review still `NEEDS_FIX` after 3 rounds | `blocked: spec_review` or `blocked: plan_review` |
+| spec-writer or planner `BLOCKED` (or no status block) | Re-dispatch once, then `blocked: spec_writer` / `plan_writer` |
+| A reviewer returns neither verdict | Re-dispatch once, then block (`spec_review`, `plan_review`, `task <n> review`). For the final review: note it and finish on the checks |
+| A check added in clarify | Baselined right after the brief is approved |
 | Implementer `BLOCKED`, or checks still red after 3 fix rounds | One extra attempt telling the implementer to use superpowers:systematic-debugging with the check output. Still failing: `blocked: task <n>` |
 | Implementer says `DONE` but checks fail | The conductor always re-runs the checks itself; a failure counts as a fix round |
 | Code review still `NEEDS_FIX` after 3 rounds | `blocked: task <n> review` |

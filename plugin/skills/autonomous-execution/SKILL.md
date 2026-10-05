@@ -29,14 +29,18 @@ For each task `n` whose status is not `done`, in order:
 
 1. Record `base = git -C <worktree> rev-parse HEAD` (keep the existing `base` if the task is `in_progress` on resume). Set the status to `in_progress` and write state.
 2. **Implement:** dispatch `duckor-flow:implementer` with task `n` (see the conductor's dispatch template).
-3. **Verify:** run every check yourself in the worktree, with output to `checks-task<n>-<round>.log`, and read only the tail. A check fails if it exits non-zero and is not in `baseline_failures`.
+3. **Verify:** run every check yourself in the worktree (the conductor's "Running checks", step `task<n>-r<round>`), and read only the tail of failing logs. A check fails if it exits non-zero and is not in `baseline_failures`.
 4. **Review:** if the checks pass, dispatch `duckor-flow:code-reviewer` (mode `task`, range `base..HEAD`, the task text).
 5. **Decide:**
    - Checks pass and `APPROVED` → status `done`, `head = HEAD`, add minor issues to `minor_issues`, write state, and go to the next task.
    - Checks fail → `fix_rounds += 1` and re-dispatch the implementer with `check_output` (the log tail).
    - `NEEDS_FIX` → `fix_rounds += 1` and re-dispatch the implementer with the issues.
    - Implementer `BLOCKED` → treat as a failed round with its summary as the input.
-6. **Limits:** after 3 fix rounds, make one extra attempt: dispatch the implementer with the latest failure and the instruction "Use superpowers:systematic-debugging; find the root cause before changing code." If it's still not checks-green and approved, the status is `blocked`, and the run is `blocked: task <n>` (or `blocked: task <n> review` when the checks pass but review keeps rejecting).
+6. **Limits:** after 3 fix rounds:
+   - Last round failed on **checks** (or implementer `BLOCKED`): make one extra attempt. Dispatch the implementer with the latest failure and the instruction "Use superpowers:systematic-debugging; find the root cause before changing code." If it's still not checks-green and approved, block with `task <n>`.
+   - Last round failed on **review** (checks pass): block with `task <n> review`.
+
+   Blocking sets the task's status to `blocked` and follows the conductor's Blocking section.
 
 Never fix code yourself in the main session. The main session's context is for orchestration. Keep every agent's reply to its status block.
 
@@ -44,8 +48,8 @@ Never fix code yourself in the main session. The main session's context is for o
 
 After the last task:
 
-1. Dispatch `duckor-flow:code-reviewer` in mode `final`, over `base_sha..HEAD`, with the spec and plan.
-2. If it returns `NEEDS_FIX` with critical or important issues: dispatch the implementer **once** with task `final` and those issues, then run the checks.
+1. Set phase `finish`. Dispatch `duckor-flow:code-reviewer` in mode `final`, over `base_sha..HEAD`, with the spec and plan.
+2. If it returns `NEEDS_FIX` with critical or important issues: dispatch the implementer **once** with task `final`, those issues, and `base` = the current HEAD, then run the checks. Set `review_rounds.final = 1`.
 3. Whatever is still open goes to the report. The run is `completed` if the checks pass, and `blocked: final checks` if they don't.
 
 ## Part 2: Implementer rules

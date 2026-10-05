@@ -9,12 +9,14 @@ The conductor writes `<worktree>/.duckor/flow/<run>/state.json` after every step
   "prompt": "add auth",
   "phase": "execute",
   "blocked_reason": null,
+  "blocked_phase": null,
   "options": { "confirm_spec": false },
   "branch": "duckor/add-auth",
   "worktree": "/abs/path/to/worktree",
   "base_sha": "abc1234",
   "checks": [{ "name": "test", "cmd": "npm test" }],
-  "excluded_checks": [{ "name": "test:e2e", "cmd": "npm run test:e2e", "reason": "looks like an end-to-end check (\"e2e\")" }],
+  "plugin_root": "/abs/path/to/duckor-flow",
+  "excluded_checks": [{ "name": "test:e2e", "cmd": "npm run test:e2e", "reason": "looks like an end-to-end check (\"e2e\")", "confirm": false }],
   "baseline_failures": [],
   "brief": ".duckor/flow/20261005-142000-add-auth/brief.md",
   "spec": "docs/superpowers/specs/2026-10-05-add-auth-design.md",
@@ -34,13 +36,15 @@ The conductor writes `<worktree>/.duckor/flow/<run>/state.json` after every step
 | `run` | Run id `<YYYYMMDD-HHMMSS>-<slug>`, also the run dir name |
 | `prompt` | The user's original prompt, verbatim |
 | `phase` | `setup`, `clarify`, `spec`, `plan`, `execute`, `finish`, `completed`, `blocked` |
-| `blocked_reason` | `null`, or e.g. `spec_review`, `plan_review`, `task 3`, `task 3 review`, `final checks`, `cancelled at brief` |
+| `blocked_reason` | `null`, or one of `spec_review`, `plan_review`, `spec_writer`, `plan_writer`, `task <n>`, `task <n> review`, `final checks`, `cancelled at brief`, `cancelled at spec` |
+| `blocked_phase` | The phase the run was in when it blocked; `--resume` restores it (`null` unless blocked) |
 | `options` | Flags for the run: `confirm_spec` |
 | `branch` | `duckor/<slug>` |
 | `worktree` | Absolute path to the worktree |
 | `base_sha` | HEAD when the run started; the final review covers `base_sha..HEAD` |
 | `checks` | `[{name, cmd}]` that gate every task |
-| `excluded_checks` | `[{name, cmd, reason}]`, never run, copied into the report's manual e2e list |
+| `plugin_root` | Absolute path to the installed duckor-flow plugin, passed to every agent |
+| `excluded_checks` | `[{name, cmd, reason, confirm}]`, never run, copied into the report's manual e2e list. `confirm: true` means it was excluded only because of its command; clarify asks about it |
 | `baseline_failures` | Names of checks already failing at setup; they don't block |
 | `brief` | Path to `brief.md` |
 | `spec` | Spec path, once written |

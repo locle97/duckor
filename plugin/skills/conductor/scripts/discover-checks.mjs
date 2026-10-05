@@ -8,6 +8,8 @@ import { pathToFileURL } from "node:url";
 const E2E = /e2e|playwright|cypress|integration|acceptance/i;
 const NPM_NAMES = ["test", "lint", "typecheck", "check", "format:check"];
 const MAKE_NAMES = ["test", "lint", "check"];
+// Arguments that exclude paths (e.g. `--testPathIgnorePatterns e2e`) say the opposite of "runs e2e".
+const IGNORE_ARG = /(?:--[\w-]*(?:ignore|exclude|skip)[\w-]*|-k\s+["']?not)(?:=|\s+)\S+|!\S+/gi;
 
 function read(dir, name) {
   try {
@@ -17,23 +19,30 @@ function read(dir, name) {
   }
 }
 
-function e2eReason(name, cmd) {
-  const m = name.match(E2E) ?? cmd.match(E2E);
-  return m ? `looks like an end-to-end check ("${m[0]}")` : null;
+/** Why an item looks like e2e, and whether that came from its name (certain) or only its command. */
+function e2eMatch(name, body) {
+  const byName = name.match(E2E);
+  if (byName) return { reason: `looks like an end-to-end check ("${byName[0]}")`, byCommand: false };
+  const byBody = body.replace(IGNORE_ARG, " ").match(E2E);
+  if (byBody) return { reason: `its command looks like an end-to-end run ("${byBody[0]}")`, byCommand: true };
+  return null;
 }
 
-/** Split candidates into checks and excluded, keeping e2e-looking extras as excluded only. */
+/**
+ * Split candidates into checks and excluded; extras are only ever excluded.
+ * `confirm` marks a candidate excluded only because of its command: the conductor asks the user about it.
+ */
 function classify(candidates, extras = []) {
   const checks = [];
   const excluded = [];
   for (const c of candidates) {
-    const reason = e2eReason(c.name, c.body ?? c.cmd);
-    if (reason) excluded.push({ name: c.name, cmd: c.cmd, reason });
+    const m = e2eMatch(c.name, c.body ?? c.cmd);
+    if (m) excluded.push({ name: c.name, cmd: c.cmd, reason: m.reason, confirm: m.byCommand });
     else checks.push({ name: c.name, cmd: c.cmd });
   }
   for (const c of extras) {
-    const reason = e2eReason(c.name, c.body ?? c.cmd);
-    if (reason) excluded.push({ name: c.name, cmd: c.cmd, reason });
+    const m = e2eMatch(c.name, c.body ?? c.cmd);
+    if (m) excluded.push({ name: c.name, cmd: c.cmd, reason: m.reason, confirm: false });
   }
   return { checks, excluded };
 }
@@ -46,12 +55,15 @@ function fromDoc(dir) {
     const start = lines.findIndex((l) => /^##\s+Checks\s*$/i.test(l));
     if (start < 0) continue;
     const items = [];
+    let fenced = false;
     for (const line of lines.slice(start + 1)) {
+      if (/^\s*(```|~~~)/.test(line)) fenced = !fenced;
+      if (fenced) continue;
       if (/^#{1,2}\s/.test(line)) break;
       const m = line.match(/^\s*[-*]\s+`([^`]+)`:\s+`([^`]+)`/);
       if (m) items.push({ name: m[1], cmd: m[2] });
     }
-    return classify(items);
+    if (items.length > 0) return classify(items);
   }
   return null;
 }
@@ -76,10 +88,23 @@ function fromPackageJson(dir) {
 }
 
 function fromMakefile(dir) {
-  const text = read(dir, "Makefile");
+  const text = read(dir, "GNUmakefile") ?? read(dir, "makefile") ?? read(dir, "Makefile");
   if (text === null) return null;
-  const targets = [...text.matchAll(/^([A-Za-z0-9_.-]+):(?!=)/gm)].map((m) => m[1]);
-  const toItem = (name) => ({ name, cmd: `make ${name}` });
+  const recipes = new Map();
+  let current = null;
+  for (const line of text.split(/\r?\n/)) {
+    const m = line.match(/^([A-Za-z0-9_-][A-Za-z0-9_.-]*):(?!=)(.*)$/);
+    if (m) {
+      current = m[1];
+      recipes.set(current, m[2]);
+    } else if (current && line.startsWith("\t")) {
+      recipes.set(current, `${recipes.get(current)}\n${line}`);
+    } else if (line.trim() !== "") {
+      current = null;
+    }
+  }
+  const targets = [...recipes.keys()];
+  const toItem = (name) => ({ name, cmd: `make ${name}`, body: `make ${name} ${recipes.get(name)}` });
   return classify(
     MAKE_NAMES.filter((n) => targets.includes(n)).map(toItem),
     targets.filter((n) => !MAKE_NAMES.includes(n)).map(toItem),
@@ -109,11 +134,15 @@ function fromGo(dir) {
 export function discoverChecks(repoDir) {
   const doc = fromDoc(repoDir);
   if (doc) return { ...doc, source: "doc" };
+  // The first ecosystem with at least one check wins; exclusions from every ecosystem are kept.
+  const excluded = [];
   for (const infer of [fromPackageJson, fromMakefile, fromPyproject, fromCargo, fromGo]) {
     const found = infer(repoDir);
-    if (found && (found.checks.length > 0 || found.excluded.length > 0)) return { ...found, source: "inferred" };
+    if (!found) continue;
+    excluded.push(...found.excluded);
+    if (found.checks.length > 0) return { checks: found.checks, excluded, source: "inferred" };
   }
-  return { checks: [], excluded: [], source: "none" };
+  return { checks: [], excluded, source: "none" };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(fs.realpathSync(process.argv[1])).href) {

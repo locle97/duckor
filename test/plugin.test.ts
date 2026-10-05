@@ -3,6 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 
+import { parse } from "yaml";
+
 import { ROOT } from "./helpers.ts";
 
 const PLUGIN = path.join(ROOT, "plugin");
@@ -11,16 +13,13 @@ function readJson(file: string): any {
   return JSON.parse(fs.readFileSync(file, "utf8"));
 }
 
-/** Parse the leading `---` block of a Markdown file as `key: value` lines. */
+/** Parse the leading `---` block of a Markdown file as YAML; every value must be a string. */
 function frontmatter(file: string): Record<string, string> {
   const m = fs.readFileSync(file, "utf8").match(/^---\n([\s\S]*?)\n---\n/);
   if (!m) throw new Error(`${file}: no frontmatter`);
-  const out: Record<string, string> = {};
-  for (const line of m[1].split("\n")) {
-    const kv = line.match(/^([\w-]+):\s*(.*)$/);
-    if (kv) out[kv[1]] = kv[2].replace(/^"(.*)"$/, "$1");
-  }
-  return out;
+  const data = parse(m[1]) as Record<string, unknown>;
+  for (const [k, v] of Object.entries(data)) assert.equal(typeof v, "string", `${file}: ${k} is not a string`);
+  return data as Record<string, string>;
 }
 
 test("manifests point at the plugin", () => {
@@ -37,11 +36,11 @@ test("manifests point at the plugin", () => {
 });
 
 const AGENTS: Record<string, { tools: string; model: string }> = {
-  "spec-writer": { tools: "Read, Grep, Glob, Write, Edit, Bash", model: "opus" },
+  "spec-writer": { tools: "Read, Grep, Glob, Write, Edit, Bash, Skill", model: "opus" },
   "doc-reviewer": { tools: "Read, Grep, Glob", model: "opus" },
-  planner: { tools: "Read, Grep, Glob, Write, Edit, Bash", model: "opus" },
-  implementer: { tools: "Read, Edit, Write, Glob, Grep, Bash", model: "sonnet" },
-  "code-reviewer": { tools: "Read, Grep, Glob, Bash", model: "opus" },
+  planner: { tools: "Read, Grep, Glob, Write, Edit, Bash, Skill", model: "opus" },
+  implementer: { tools: "Read, Edit, Write, Glob, Grep, Bash, Skill", model: "sonnet" },
+  "code-reviewer": { tools: "Read, Grep, Glob, Bash, Skill", model: "opus" },
 };
 
 test("agents have valid frontmatter", () => {
@@ -57,6 +56,9 @@ test("agents have valid frontmatter", () => {
     const body = fs.readFileSync(file, "utf8");
     assert.match(body, /STATUS:/, `${file}: status block`);
     assert.match(body, /worktree/, `${file}: worktree discipline`);
+    if (/\b(duckor-flow|superpowers):[a-z]/.test(body.replace(/^---[\s\S]*?---/, "").replace(/description:.*$/m, ""))) {
+      assert.match(fm.tools, /\bSkill\b/, `${file}: names skills but cannot load them`);
+    }
   }
 });
 
@@ -144,7 +146,7 @@ test("the command loads the conductor", () => {
 test("state.md documents every state field", () => {
   const text = fs.readFileSync(path.join(CONDUCTOR, "state.md"), "utf8");
   for (const key of [
-    "version", "run", "prompt", "phase", "blocked_reason", "options", "branch", "worktree", "base_sha",
+    "version", "run", "prompt", "phase", "blocked_reason", "blocked_phase", "options", "plugin_root", "branch", "worktree", "base_sha",
     "checks", "excluded_checks", "baseline_failures", "brief", "spec", "plan", "review_rounds", "tasks",
     "decisions", "minor_issues",
   ]) assert.ok(text.includes(`\`${key}\``), `state.md: ${key}`);

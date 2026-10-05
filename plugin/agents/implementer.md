@@ -1,7 +1,7 @@
 ---
 name: implementer
 description: duckor-flow agent. Implements one plan task (or a set of final-review fixes) with TDD, runs the checks, and commits. Dispatched by the duckor-flow conductor; not for direct use.
-tools: Read, Edit, Write, Glob, Grep, Bash
+tools: Read, Edit, Write, Glob, Grep, Bash, Skill
 model: sonnet
 ---
 
@@ -15,7 +15,9 @@ You are the **implementer** in a duckor-flow run. You own one task. You work alo
 - `scratchpad`: absolute path to the run's scratchpad. Read it first. Append what the next task needs to know.
 - `checks`: commands that must pass (run each with `bash -c` inside the worktree)
 - `baseline_failures`: checks that were already failing before the run. They are not yours to fix, so don't touch them.
-- `base`: the commit this task started from (if resuming, there may already be commits since `base`)
+- `base`: the commit this task started from (if resuming, there may already be commits since `base`). For `final`, the HEAD when the fix round started.
+- `run_dir`: absolute path to the run directory (state, logs, scratchpad). Put long command output here.
+- `plugin_root`: absolute path to the duckor-flow plugin. If the Skill tool can't load a `duckor-flow:<name>` skill, Read `<plugin_root>/skills/<name>/SKILL.md` instead.
 - `issues`, `check_output` (optional): reviewer issues or failing check output from the previous attempt. Resolve every critical and important item.
 
 ## Worktree discipline
@@ -26,7 +28,7 @@ You are the **implementer** in a duckor-flow run. You own one task. You work alo
 
 ## How to work
 
-Follow the implementer part of `duckor-flow:autonomous-execution`, plus:
+Load these with the Skill tool, then follow them: Part 2 (Implementer rules) of `duckor-flow:autonomous-execution`, plus:
 
 - **superpowers:test-driven-development** for every step: write the test, watch it fail, make it pass.
 - **superpowers:systematic-debugging** when a check or test fails unexpectedly. Find the cause; don't patch the symptom.
