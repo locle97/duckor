@@ -126,7 +126,7 @@ Rules enforced at load time (any violation exits with code 2 and names the path,
 
 Defaults: `agent.allowed_tools` defaults to `[Read, Edit, Write, Glob, Grep]` plus `Bash(<full gate argv> *)` for each gate (e.g. `Bash(npm test *)`, not `Bash(npm *)`), so the agent can run the gates itself and nothing broader. Limits default to the values in the example.
 
-`.duckor/` is the per-repo directory: `.duckor/skills/` holds overrides and is committed; `.duckor/runs/` holds run output and is never committed. Every `duckor run` (with or without `init`) ensures `.duckor/runs/` is listed in `.git/info/exclude`, which changes no tracked file. `duckor init` also adds it to `.gitignore`. All harness change detection and staging additionally pass the pathspec `:!.duckor/runs`, so run output can never make the tree look changed or end up in a commit.
+`.duckor/` is the per-repo directory: `.duckor/skills/` holds overrides and is committed; `.duckor/runs/` holds run output and is never committed. Every `duckor run` (with or without `init`) in a git repo ensures `.duckor/runs/` is listed in the exclude file (`git rev-parse --git-path info/exclude`, so worktrees work), which changes no tracked file. `duckor init` also adds it to `.gitignore`. All harness change detection and staging additionally pass the pathspec `:!.duckor/runs`, so run output can never make the tree look changed or end up in a commit.
 
 The task comes from `duckor run "<task>"` or `-f PROMPT.md`. It is the payload of the starting event and is included in every iteration prompt.
 
@@ -146,16 +146,17 @@ Text from the agent or tools (event payloads, summaries, gate output) is fenced 
 
 The loop holds one current event; every iteration consumes one event and produces at most one, so no queue is needed.
 
-**Iteration = one hat run.** Every run of a hat is an iteration, including retries after an agent failure or a gate failure. Each iteration increments the counter used for `{{iteration}}`, `iter-NNN.log` and `max_iterations`, counts toward `max_activations`, and gets its own `IterationRecord` with an `outcome` of `ok`, `agent_failed` or `gates_failed`. The commit phase belongs to the iteration that triggered it.
+**Iteration = one hat run.** Every run of a hat is an iteration, including retries after an agent failure or a gate failure. Each iteration increments the counter used for `{{iteration}}`, `iter-NNN.log` and `max_iterations`, counts toward `max_activations`, and gets its own `IterationRecord` with an `outcome` of `ok`, `agent_failed`, `gates_failed` or `interrupted` (Ctrl-C mid-iteration). The commit phase belongs to the iteration that triggered it.
 
-**Change baseline.** At run start the harness records the set of already-dirty paths (empty unless `--allow-dirty`). "The tree changed" means `git status --porcelain -- . :!.duckor/runs` lists a path that is not in that baseline. The baseline is not reset between iterations or retries; HEAD moves only through duckor commits, so uncommitted edits from a failed attempt are still "changed" when a later retry passes and are committed then. Baseline paths are never staged: the commit skill receives them as a do-not-stage list, and the fallback stages explicit paths, excluding them. (If a hat edits a baseline path, that edit stays uncommitted; this is a documented limitation of `--allow-dirty`.)
+**Change baseline.** At run start the harness records the set of already-dirty paths (same `git status` command) (empty unless `--allow-dirty`). "The tree changed" means `git status --porcelain -uall -- . :!.duckor/runs` lists a path that is not in that baseline. The baseline is not reset between iterations or retries; HEAD moves only through duckor commits, so uncommitted edits from a failed attempt are still "changed" when a later retry passes and are committed then. Baseline paths are never staged: the commit skill receives them as a do-not-stage list, and the fallback stages explicit paths, excluding them. (If a hat edits a baseline path, that edit stays uncommitted; this is a documented limitation of `--allow-dirty`.)
 
 ```
 event <- starting_event(task)
 loop:
-  check limits (iterations, runtime, cost) and abort signal; iteration++
+  check limits (iterations, runtime, cost) and abort signal
   hat <- route(event)                          # none: stop "unrouted"
-  hat.activations++ > max_activations           # stop "hat_exhausted:<hat>"
+  hat.activations + 1 > max_activations         # stop "hat_exhausted:<hat>"
+  iteration++; hat.activations++               # only now does an iteration exist
   prompt <- iteration skill + hat + event + scratchpad path + guardrails + feedback
   result <- agent(prompt, schema(hat.publishes))
     failure: record (agent_failed); failures++, retry same event; failures >= max_failures: stop "agent_failed"
@@ -177,12 +178,12 @@ loop:
 
 ```
 claude -p --output-format json --json-schema <schema>
-  --tools <tools> --allowedTools <tools...>
-  --model <model>
+  --tools <bare tool names> --allowedTools <rules...>
+  --restricted --model <model>
   --no-session-persistence --strict-mcp-config --disable-slash-commands
 ```
 
-`--tools` and `--allowedTools` both get the allow-list, so tools outside it are not available at all (as in duckwright). `--allowedTools` is variadic and is always followed by another flag. The prompt goes on stdin.
+`--allowedTools` gets the full permission rules (e.g. `Bash(npm test *)`). `--tools` gets the deduplicated bare tool names with any `(...)` stripped (e.g. `Read,Edit,Write,Glob,Grep,Bash`), so tools outside the list are not available at all. `--restricted` (as in duckwright) makes `claude` ignore user, project and local settings, so a hat cannot widen its own permissions by writing `.claude/settings.json`, and confines file tools to the repo. `--allowedTools` is variadic and is always followed by another flag. The prompt goes on stdin.
 
 `AgentFn` is `(req: { prompt, tools, schema | null, model, timeoutMs, signal }) => Promise<AgentResult>`. Both the hat call and the commit call go through it, so loop tests can script both. The schema requires:
 
@@ -198,9 +199,9 @@ Each gate runs as an argv list (no shell) in the repo root with its own timeout.
 
 ### Commit phase
 
-Runs only when the working tree differs from its state at iteration start, gates passed, and `commit.enabled` is true. It calls `claude -p` with the `commit` skill and a fixed allow-list: `Bash(git add *)`, `Bash(git commit *)`, `Bash(git status *)`, `Bash(git diff *)`. It runs with no JSON schema. Afterwards the harness checks that HEAD moved, that no changed path (vs baseline) is left uncommitted, and that the new commit touches no baseline path. If any check fails, it records `commit_failed`; if HEAD moved, it resets it back softly (`git reset --soft <previous HEAD>`) and then makes a fallback commit itself: `git add -- <changed paths>` then `git commit -m "duckor: <hat> iter <n>"`.
+Runs only when the tree changed (vs baseline, see Data flow), gates passed, and `commit.enabled` is true. It calls `claude -p` with the `commit` skill and a fixed allow-list: `Bash(git add *)`, `Bash(git commit *)`, `Bash(git status *)`, `Bash(git diff *)`. It runs with no JSON schema. Afterwards the harness checks that HEAD moved, that no changed path (vs baseline) is left uncommitted, and that no commit in `<previous HEAD>..HEAD` touches a baseline path. If any check fails, it records `commit_failed`, runs a mixed reset (`git reset -q <previous HEAD>`, which also clears anything the agent staged), and makes a fallback commit itself: `git add -- <changed paths>` then `git commit -m "duckor: <hat> iter <n>"`.
 
-Hook safety: hats have Write access, so at run start the harness hashes `.git/hooks/` and records `core.hooksPath`. Before each commit phase it re-checks both; any change stops the run with `hooks_tampered` before anything is committed. Because hooks are verified unchanged, the repo's own hooks run normally for both the skill's commit and the fallback commit. Commit costs count toward `max_cost_usd`.
+Hook safety: hats have Write access, so at run start the harness hashes the hooks directory (`git rev-parse --git-path hooks`) and the git config file, and records `core.hooksPath`. Before each commit phase it re-checks both; any change stops the run with `hooks_tampered` before anything is committed. Because hooks are verified unchanged, the repo's own hooks run normally for both the skill's commit and the fallback commit. Commit costs count toward `max_cost_usd`.
 
 ## Run output
 
@@ -224,13 +225,13 @@ And a final summary: stop reason, iterations, total cost, commits, history path.
 | --- | --- |
 | Invalid config | Exit 2 before spawning anything, with a path-qualified message |
 | Dirty tree at start | Refuse unless `--allow-dirty` |
-| Not a git repo with `commit.enabled` | Refuse to start |
+| Not a git repo with `commit.enabled` | Refuse to start. With `--no-commit` a non-git directory is allowed and all git steps (exclude, baseline, hooks check) are skipped |
 | `claude` non-zero exit, timeout, bad JSON, schema mismatch | Agent failure; retry same event; stop after `max_failures` in a row |
 | Topic outside `publishes` | Prevented by schema enum; re-checked; agent failure if it slips through |
 | No event and no `default_publishes` | Agent failure |
 | Gate missing, failing or timing out | Gate failure; retry hat with feedback; stop after `max_gate_retries` |
-| Commit phase leaves HEAD unmoved, changes uncommitted, or commits a baseline path | Record `commit_failed`, soft-reset if needed, make fallback commit |
-| `.git/hooks` or `core.hooksPath` changed during the run | Stop `hooks_tampered` before committing |
+| Commit phase leaves HEAD unmoved, changes uncommitted, or commits a baseline path | Record `commit_failed`, mixed-reset to previous HEAD, make fallback commit |
+| Hooks directory, git config or `core.hooksPath` changed during the run | Stop `hooks_tampered` before committing |
 | `max_activations` exceeded | Stop `hat_exhausted:<hat>` |
 | Ctrl-C | SIGTERM the child, record the partial iteration, write history, exit 130 |
 
@@ -253,6 +254,7 @@ duckor --version
 - Unit tests per module: config validation and defaults, glob matching and routing, skill override resolution, prompt assembly and fencing, agent argv/schema/parsing with a fake `Runner`, gates with tiny real commands (`node -e`), commit verification and fallback in a temporary git repo.
 - `loop.test.ts`: `Orchestrator` with a scripted fake `AgentFn`, real gates and a real temporary git repo. Scenarios: solo completion; planner → builder → reviewer with a rejection loop; gate failure then recovery; gate retries exhausted; each limit; unrouted; abort; commit fallback.
 - `cli.test.ts` and `packaging.test.ts`: flags, `init` output and `.gitignore`, `--version`, bundled skills and presets shipped.
+- Note: `--restricted` needs a `claude` version that has it (duckwright tested 2.1.288); the README states this.
 - Optional end-to-end test against real `claude`, skipped unless `DUCKOR_E2E=1`.
 - CI: duckwright's Node job (Node 22 and 24: `npm ci`, `npm test`, `npm run build`, `scripts/smoke_install.sh`) and its npm release workflow.
 
