@@ -24,7 +24,7 @@ If the prompt describes several independent subsystems, say so in the brief and 
 - Ask **3–6 questions** in total, in **at most 2** AskUserQuestion calls (at most 4 questions per call).
 - If the conductor reports **no checks found**, one of these questions must be: "No checks found. Which command verifies this project?" Offer the likeliest candidates as options. It counts toward the 6.
 - If the conductor reports an excluded check with `confirm: true` (a normal check whose command only *looks* like e2e, e.g. `npm test` running `jest --selectProjects integration`), ask whether to keep it as a check. It also counts toward the 6.
-- Ask only about what changes the design: purpose and users, scope edges, constraints (compatibility, dependencies, performance), behavior on the important error cases, and what "done" means.
+- Ask only about what changes the design: purpose and users, scope edges, constraints (compatibility, dependencies, performance), the external surface (screens, endpoints, commands) when the prompt leaves it open, behavior on the important error cases, and what "done" means.
 - Prefer multiple choice. Put your recommended option first and mark it "(Recommended)".
 - Don't ask about what you can decide by convention or from the repo. Decide those, and list them as assumptions.
 
@@ -50,7 +50,7 @@ Write `brief.md` in the run directory:
 - ...
 
 ## Success criteria
-- <observable outcomes; each one testable by the checks or by review — never by e2e>
+- SC1: <an observable outcome, provable by the checks, by review, or by a QA scenario against a contract — never by an e2e check in the run>
 
 ## Assumptions
 - <every decision you made without asking, one line each>
@@ -73,10 +73,29 @@ Write the spec as a design document an engineer who has never seen the repo coul
 1. **Summary**: what is being built and why, in a paragraph.
 2. **Decisions**: a table of topic → decision. **Every brief assumption appears here** as an explicit decision, along with any choice you made while writing.
 3. **Architecture / Components**: units with one clear purpose each, how they talk, and what they depend on. Name files and modules; follow the repo's existing patterns.
-4. **Data flow**: how input becomes output, step by step.
-5. **Error handling**: a table of failure → behavior.
-6. **Testing**: what the unit and integration tests prove, and which check commands run them. **E2E tests are never part of verification.** If the feature needs e2e coverage, list it under a "Manual e2e" heading for the user.
-7. **Out of scope**: the brief's Out of scope list, plus anything you cut.
+4. **Contracts**: every external surface the change adds or changes (see Contracts below). The implementation plan builds to them and the QA test plan tests against them, so both meet the same goal.
+5. **Data flow**: how input becomes output, step by step.
+6. **Error handling**: a table of failure → behavior. Every failure a caller can see also appears in its contract's Errors.
+7. **Testing**: what the unit and integration tests prove, and which check commands run them. Then a table mapping each success criterion (`SC1`, …) to its contracts and how it's proved: a check, review, or QA scenarios in the test plan. **E2E tests are never part of the run's verification.** If the feature needs e2e coverage beyond the QA test plan (a real external service, a deploy), list it under a "Manual e2e" heading for the user.
+8. **Out of scope**: the brief's Out of scope list, plus anything you cut.
+
+### Contracts
+
+One entry per surface a user or a client can reach: a UI screen or component, an HTTP/RPC endpoint, a CLI command, a public library API, an emitted event, a file format. Internal functions are not contracts; their names belong to the plan.
+
+```markdown
+### C1: <name> (API | UI | CLI | Library | Event | File)
+
+- **Surface:** `POST /api/v1/tokens` · the `/settings/tokens` screen · `tool export <file>` · `export function parse(text: string): Doc`
+- **Who:** <who may use it, and what happens to anyone else; omit if anyone may>
+- **Input:** <each field or argument: name, type, required or optional, default, limits>
+- **Output:** <the success result: status or exit code, and each field with its exact name and type; for UI, what the user sees and where they end up>
+- **Errors:** <each condition → exact status or exit code, error code and message>
+- **States (UI only):** <loading, empty, error, success, each with its exact copy>
+- **Criteria:** SC1, SC3
+```
+
+If the change has no external surface (a pure refactor or internal fix), write `None: <why>` and name the existing surfaces it must not change.
 
 **Rules:**
 
@@ -84,4 +103,5 @@ Write the spec as a design document an engineer who has never seen the repo coul
 - **No placeholders:** no TODO, TBD, "handle appropriately" or "etc.". If it's undecided, decide it and add a Decisions row.
 - Units small enough to hold in context. If a file you'll modify is already sprawling, a targeted split is fair. Unrelated refactors are not.
 - Exact values (names, limits, messages, formats) are written into the spec, so the plan can copy them.
-- The brief's success criteria must each map to something in Testing.
+- The brief's success criteria must each map to something in Testing. Every success criterion about behavior names at least one contract, and every contract names at least one criterion.
+- Contracts are exact. Two engineers reading the same contract build the same response, and a tester who has never seen the code can check it.

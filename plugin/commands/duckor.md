@@ -1,5 +1,5 @@
 ---
-description: One prompt to a reviewed, committed feature branch. Clarifies once, then autonomously writes a spec, a plan and the implementation (no e2e).
+description: One prompt to a reviewed, committed feature branch. Clarifies once, then autonomously writes a spec with contracts, an implementation plan, a QA test plan and the implementation (no e2e).
 argument-hint: '"<prompt>" [--resume] [--confirm-spec]'
 ---
 

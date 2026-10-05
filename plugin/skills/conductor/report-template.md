@@ -6,7 +6,7 @@
 
 - Branch: `<branch>`, base `<base_sha>` → head `<HEAD>`
 - Worktree: `<worktree>`
-- Spec: `<spec>` · Plan: `<plan>`
+- Spec: `<spec>` · Plan: `<plan>` · QA test plan: `<test_plan>` (<test_scenarios> scenarios)
 - Skills: <each non-default role as `role: skill (user|project)`, plus `review_mode` if `replace`; or "defaults">
 
 ## What was built
@@ -38,6 +38,7 @@
 
 These weren't run. Run them yourself before merging:
 
+- [ ] Hand the QA test plan to QA (or run it yourself): `<test_plan>`, P1 scenarios first
 - [ ] `<excluded check command>`: <reason>
 - [ ] <each item from the plan's `## Manual e2e` section>
 

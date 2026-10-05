@@ -44,6 +44,8 @@ A task is the smallest unit with its own test cycle that a reviewer could reject
 - Modify: `exact/path`
 - Test: `exact/test/path`
 
+**Contracts:** <the spec's contract ids this task builds or changes, e.g. C1, C3; "None" for internal tasks>
+
 **Interfaces:**
 - Consumes: <exact names and signatures from earlier tasks>
 - Produces: <exact names and signatures later tasks rely on>
@@ -57,19 +59,20 @@ A task is the smallest unit with its own test cycle that a reviewer could reject
 - [ ] **Step 5: Commit**: `git add <explicit paths> && git commit -m "<type>: <message>"`
 
 ## Manual e2e
-<every end-to-end or real-service verification the spec implies, as a checklist for the user; "None" if there is none>
+<the spec's "Manual e2e" items, as a checklist for the user; "None" if there is none. UI/API scenarios are the QA test plan's job: don't repeat them here>
 ```
 
 ## Rules
 
 - **Checks per task.** Draw them from the run's checks, or a narrower test command plus the full suite on the last step. A task is done only when its checks pass.
+- **Contracts are binding.** A task that builds a contract copies its exact surface, fields, codes and messages from the spec into the test assertions. A contract's behavior is pinned by unit or integration tests that run in the checks; the QA test plan covers it again from outside, so don't plan browser or live-server tests for it.
 - **No e2e in tasks.** No task writes, changes or runs e2e, browser, or real-external-service tests. Those go to `## Manual e2e`. The run's excluded check commands never appear in a task.
 - **One reasonable reading per step.** Lines that decide nothing ("handle edge cases", "add validation", "write tests") are gaps. Function bodies that the signature and tests already determine are transcripts. Fix both.
 - **Proportion.** A plan several times longer than the spec has written the code instead. Use signatures, test names and assertions, not bodies.
 
 ## Self-review before committing
 
-1. **Spec coverage:** point to a task for every spec requirement and add any that are missing.
+1. **Spec coverage:** point to a task for every spec requirement and add any that are missing. Every contract in the spec is listed under at least one task's **Contracts**, and every error row of it is pinned by a test.
 2. **Step scan:** each step is unambiguous and not a transcript.
 3. **Type consistency:** names and signatures match across Interfaces blocks.
 4. **Review Focus:** each line has a pinning test in its owning task.

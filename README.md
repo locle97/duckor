@@ -7,7 +7,7 @@ There are two ways to run it:
 | | What it is | When to use it |
 | --- | --- | --- |
 | [`duckor` CLI](#usage) | A headless harness around `claude -p`, configured with hats and gates in `duckor.yml` | Unattended runs, scripts, CI |
-| [`duckor-flow` plugin](#claude-code-plugin-duckor-flow) | A Claude Code plugin: `/duckor "<prompt>"` clarifies once, then runs spec → plan → implementation → review on its own | Interactive use in Claude Code |
+| [`duckor-flow` plugin](#claude-code-plugin-duckor-flow) | A Claude Code plugin: `/duckor "<prompt>"` clarifies once, then runs spec → plan → QA test plan → implementation → review on its own | Interactive use in Claude Code |
 
 > **Status: early development.** The `duckor-flow` plugin (v0.1.0) is usable. For the CLI, Milestone 1 (the solo loop) is implemented: `duckor run` drives a single hat until it publishes the completion event or hits a limit. Gates, commits, multiple hats, skill overrides and the other presets are still planned. Sections marked *(planned)* describe the v1 design in the [design spec](docs/superpowers/specs/2026-10-05-duckor-design.md), not current behavior.
 
@@ -87,7 +87,7 @@ Only `solo` ships today.
 
 ## Claude Code plugin: duckor-flow
 
-`duckor-flow` brings the same ideas into Claude Code. You give it one prompt. It asks one round of clarifying questions and gets your approval of a short brief. After that it works on its own: it writes a spec, writes a plan, and implements the plan task by task, with checks and a review after each task. It finishes with commits on a feature branch in a git worktree and a `report.md`.
+`duckor-flow` brings the same ideas into Claude Code. You give it one prompt. It asks one round of clarifying questions and gets your approval of a short brief. After that it works on its own: it writes a spec whose contracts pin down every screen, endpoint or command the change touches, writes an implementation plan and a QA test plan against those contracts, and implements the plan task by task, with checks and a review after each task. It finishes with commits on a feature branch in a git worktree and a `report.md`.
 
 It never runs end-to-end tests. It finds them, leaves them out, and lists them in the report for you to run.
 
@@ -116,6 +116,7 @@ setup     worktree + branch duckor/<slug>, discover checks (e2e excluded), basel
 clarify   3-6 questions in one round -> brief.md -> you approve      (the only gate)
 spec      spec-writer -> doc-reviewer -> fix loop (max 3)
 plan      planner -> doc-reviewer -> fix loop (max 3)
+test plan test-planner -> doc-reviewer -> fix loop (max 3)
 execute   per task: implementer -> checks (run by the conductor) -> code-reviewer -> fix loop (max 3)
 finish    whole-branch review -> one fix round -> checks -> report.md
 ```
@@ -123,6 +124,7 @@ finish    whole-branch review -> one fix round -> checks -> report.md
 - **Fresh context per step.** The main session only orchestrates. Each spec, plan, task and review runs in a fresh subagent that gets file paths, not chat history, and replies with a short status block.
 - **State on disk.** `state.json` is written after every step, which is what makes `--resume` work.
 - **Backpressure.** A task is done only when the checks pass in the conductor's own run (not just in the agent's claim) **and** a reviewer approves. Checks that were already failing before the run are recorded as a baseline and don't block.
+- **Contracts tie the plans together.** The spec lists every external surface the change adds or changes (UI, API, CLI, public library API, events, files) with exact inputs, outputs, errors and UI states, each linked to a numbered success criterion. The implementation plan builds to those contracts, and the code reviewer holds the code to them. The test planner writes the QA test plan from the spec alone, without reading the implementation plan: black-box UI/API scenarios (happy paths, every error row, boundaries, regression) for QA to run after the build. Unit and integration tests stay with the implementer, and the run never executes the QA plan.
 - **Decisions, not questions.** After the brief, agents don't ask you anything. They decide, and every decision is listed in the report with why and what it costs if wrong.
 
 ### When it asks, and when it stops
@@ -159,7 +161,7 @@ Some roles in the flow are filled by a skill you can swap for your own, such as 
 
 | Role | Default | Used for |
 | --- | --- | --- |
-| `commit` | none (a plain `git commit`) | Writing the message of every spec, plan and task commit |
+| `commit` | none (a plain `git commit`) | Writing the message of every spec, plan, test plan and task commit |
 | `code-review` | `superpowers:requesting-code-review` | The per-task and final code review |
 | `tdd` | `superpowers:test-driven-development` | How the implementer writes tests and code |
 | `debugging` | `superpowers:systematic-debugging` | Failing tests and checks |
@@ -176,11 +178,11 @@ Your skill controls *how* the work is done, such as the message format or the re
 | Part | Name |
 | --- | --- |
 | Command | `/duckor` |
-| Skills | `conductor` (the orchestrator), `autonomous-brainstorming`, `autonomous-writing-plans`, `autonomous-execution` (adapted from superpowers; see [`plugin/UPSTREAM.md`](plugin/UPSTREAM.md)) |
-| Agents | `spec-writer`, `doc-reviewer`, `planner`, `implementer` (sonnet), `code-reviewer`; all but the implementer run on opus |
+| Skills | `conductor` (the orchestrator), `autonomous-brainstorming`, `autonomous-writing-plans`, `autonomous-execution` (adapted from superpowers; see [`plugin/UPSTREAM.md`](plugin/UPSTREAM.md)), `autonomous-writing-test-plans` |
+| Agents | `spec-writer`, `doc-reviewer`, `planner`, `test-planner`, `implementer` (sonnet), `code-reviewer`; all but the implementer run on opus |
 | Scripts | `discover-checks.mjs` (the check discovery above) and `resolve-skills.mjs` (the skill roles above) |
 
-The spec, the plan and each task's code are committed on `duckor/<slug>`. Run state (`state.json`, `brief.md`, `scratchpad.md`, check logs and `report.md`) lives in `.duckor/flow/<run>/` inside the worktree and is git-excluded. The report covers the outcome, the commits for each task, the decisions made for you, concerns, check results, a manual e2e checklist and next steps.
+The spec, the plan, the QA test plan and each task's code are committed on `duckor/<slug>`. Run state (`state.json`, `brief.md`, `scratchpad.md`, check logs and `report.md`) lives in `.duckor/flow/<run>/` inside the worktree and is git-excluded. The report covers the outcome, the commits for each task, the decisions made for you, concerns, check results, a manual e2e checklist and next steps.
 
 **Safety.** The plugin never pushes, merges or opens a PR. It never uses `--no-verify`, `--force` or history rewrites, and never edits, skips or deletes tests to get green (reviewers treat that as critical). Agents only touch files inside the worktree, and text from the repo or from tools is treated as data, not instructions.
 
@@ -190,7 +192,7 @@ The design is in [the plugin spec](docs/superpowers/specs/2026-10-05-duckor-flow
 
 1. In a scratch git repo with an npm `test` script, run `/duckor "add a --version flag"`.
 2. Answer the questions and approve the brief.
-3. Check that the `duckor/<slug>` branch has a spec commit, a plan commit and the task commits.
+3. Check that the `duckor/<slug>` branch has a spec commit, a plan commit, a test plan commit and the task commits.
 4. Check that `report.md` lists the decisions and has a manual e2e section.
 
 CI only covers the plugin's structure, check discovery and skill resolution; see Development.

@@ -24,7 +24,9 @@ The conductor writes `<worktree>/.duckor/flow/<run>/state.json` after every step
   "brief": ".duckor/flow/20261005-142000-add-auth/brief.md",
   "spec": "docs/superpowers/specs/2026-10-05-add-auth-design.md",
   "plan": "docs/superpowers/plans/2026-10-05-add-auth.md",
-  "review_rounds": { "spec": 1, "plan": 0, "final": 0 },
+  "test_plan": "docs/superpowers/test-plans/2026-10-05-add-auth-test-plan.md",
+  "test_scenarios": 14,
+  "review_rounds": { "spec": 1, "plan": 0, "test_plan": 0, "final": 0 },
   "tasks": [
     { "n": 1, "title": "Token model", "status": "done", "base": "abc1234", "head": "def5678", "fix_rounds": 1, "concerns": [] }
   ],
@@ -38,8 +40,8 @@ The conductor writes `<worktree>/.duckor/flow/<run>/state.json` after every step
 | `version` | Schema version, `1` |
 | `run` | Run id `<YYYYMMDD-HHMMSS>-<slug>`, also the run dir name |
 | `prompt` | The user's original prompt, verbatim |
-| `phase` | `setup`, `clarify`, `spec`, `plan`, `execute`, `finish`, `completed`, `blocked` |
-| `blocked_reason` | `null`, or one of `spec_review`, `plan_review`, `spec_writer`, `plan_writer`, `task <n>`, `task <n> review`, `final checks`, `cancelled at brief`, `cancelled at spec` |
+| `phase` | `setup`, `clarify`, `spec`, `plan`, `test_plan`, `execute`, `finish`, `completed`, `blocked` |
+| `blocked_reason` | `null`, or one of `spec_review`, `plan_review`, `test_plan_review`, `spec_writer`, `plan_writer`, `test_plan_writer`, `task <n>`, `task <n> review`, `final checks`, `cancelled at brief`, `cancelled at spec` |
 | `blocked_phase` | The phase the run was in when it blocked; `--resume` restores it (`null` unless blocked) |
 | `options` | Flags for the run: `confirm_spec` |
 | `branch` | `duckor/<slug>` |
@@ -55,7 +57,9 @@ The conductor writes `<worktree>/.duckor/flow/<run>/state.json` after every step
 | `brief` | Path to `brief.md` |
 | `spec` | Spec path, once written |
 | `plan` | Plan path, once written |
-| `review_rounds` | Fix rounds used per document review and for the final review |
+| `test_plan` | QA test plan path, once written |
+| `test_scenarios` | Number of `TS-` scenarios in the approved test plan |
+| `review_rounds` | Fix rounds used per document review (`spec`, `plan`, `test_plan`) and for the final review |
 | `tasks` | One entry per plan task: `n`, `title`, `status` (`pending`, `in_progress`, `done`, `blocked`), `base`, `head`, `fix_rounds`, `concerns` |
 | `decisions` | Every ruling made for the user, `<decision> — <why> — <cost if wrong>` |
 | `minor_issues` | Minor review findings, reported but not fixed |

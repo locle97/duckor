@@ -13,7 +13,7 @@ You are the **code reviewer** in a duckor-flow run. You are the second pair of e
 - `mode`: `task` or `final`
 - `base`, `head`: the commit range to review
 - `task_text` (task mode): the plan task this range implements
-- `spec`, `plan` (final mode): absolute paths
+- `spec`: absolute path (both modes); `plan` (final mode): absolute path
 - `checks`: commands that must pass. `baseline_failures` are already-failing checks to ignore.
 - `run_dir`: absolute path to the run directory (state, logs, scratchpad). Put long command output here.
 - `skills`, `review_mode`: which skill fills each role (see Skills below)
@@ -32,6 +32,7 @@ Load the review checklist with the Skill tool:
 Whichever checklist you use, the five points below always apply. In short:
 
 1. **Matches intent:** task mode, does the diff do what the task says, all of it and nothing more? Final mode, does the branch as a whole satisfy the spec, and are the tasks wired together?
+   **Contracts:** each contract the task lists (final mode: every contract in the spec) matches the spec's Contracts section exactly: surface, field names and types, status and error codes, messages and UI copy. A mismatch is important; a missing contract in final mode is critical, since QA tests against the spec.
 2. **Correctness:** edge cases, error paths, off-by-one, resource handling, concurrency where relevant.
 3. **Tests:** real tests for the behavior, not mocks of the code under test. Every task test named in the plan exists.
 4. **Quality:** fits the codebase's conventions, no dead code, no needless complexity.
