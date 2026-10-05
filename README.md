@@ -2,7 +2,7 @@
 
 An autonomous coding loop for a git repository. Duckor keeps a coding agent (`claude -p`) working on a task, one fresh-context iteration at a time, until the work is done and verified.
 
-> **Status: design stage.** Nothing is implemented yet. This README describes the planned v1 from the [design spec](docs/superpowers/specs/2026-10-05-duckor-design.md). Commands and config below show the intended interface, and they don't work yet.
+> **Status: early development.** Milestone 1 (the solo loop) is implemented: `duckor run` drives a single hat until it publishes the completion event or hits a limit. Gates, commits, multiple hats, skill overrides and the other presets are still planned. Sections marked *(planned)* describe the v1 design in the [design spec](docs/superpowers/specs/2026-10-05-duckor-design.md), not current behavior.
 
 Duckor borrows its core ideas from [ralph-orchestrator](https://github.com/mikeyobrien/ralph-orchestrator):
 
@@ -30,24 +30,47 @@ iter 3 | 🔨 Builder | review.rejected → build.done | gates: test ✓ lint �
 
 - Node.js >= 22.18
 - [Claude Code](https://claude.com/claude-code) CLI. It must be a version that supports `--restricted`; duckwright was tested with 2.1.288.
-- A git repository. Without git, you must pass `--no-commit`.
+- A git repository is recommended; once commits land (M2), a non-git directory will need `--no-commit`.
 
-## Usage (planned)
+## Install
+
+Duckor isn't published to npm yet. Install it from source:
+
+```sh
+git clone https://github.com/locle97/duckor.git
+cd duckor
+npm ci          # also builds dist/ via the prepare script
+npm link        # puts `duckor` on your PATH
+```
+
+## Usage
+
+Available now:
+
+```sh
+duckor run "<task>" | -f PROMPT.md  [-c duckor.yml] [--max-iterations N] [--model M]
+duckor --version
+duckor --help
+```
+
+- `-c` defaults to `./duckor.yml`. If that file doesn't exist, duckor uses the bundled `solo` preset.
+- `--max-iterations` and `--model` override the config.
+
+Planned:
 
 ```sh
 duckor init [--preset code-assist|solo|debug] [--force]
-duckor run "<task>" | -f PROMPT.md  [-c duckor.yml] [--preset NAME]
-           [--max-iterations N] [--model M] [--allow-dirty] [--no-commit]
+duckor run ... [--preset NAME] [--allow-dirty] [--no-commit]
 duckor presets
-duckor --version
 ```
 
-- `-c` defaults to `./duckor.yml`. If that file doesn't exist and you don't pass `--preset`, duckor uses the `solo` preset.
-- `--preset` uses a bundled preset and ignores `./duckor.yml`. Passing both `-c` and `--preset` is an error.
-- Flags override config.
-- Duckor refuses to start on a dirty tree unless you pass `--allow-dirty`.
+- `--preset` will use a bundled preset and ignore `./duckor.yml`. Passing both `-c` and `--preset` will be an error.
+- Duckor will refuse to start on a dirty tree unless you pass `--allow-dirty`.
 
 ### Presets
+
+Only `solo` ships today.
+
 
 | Preset | Workflow |
 | --- | --- |
@@ -57,7 +80,7 @@ duckor --version
 
 ## Configuration
 
-`duckor init` writes a `duckor.yml`:
+Today a `duckor.yml` takes `loop`, `agent`, `guardrails` and exactly one hat; see [`presets/solo.yml`](presets/solo.yml). The full v1 shape *(planned)*, which `duckor init` will write, adds gates, commits and multiple hats:
 
 ```yaml
 loop:
@@ -109,7 +132,7 @@ If you don't set `agent.allowed_tools`, it defaults to `Read`, `Edit`, `Write`, 
 
 ## Skills
 
-Each harness phase is driven by a Markdown skill that uses `{{placeholder}}` substitution. To override a bundled skill, put a file with the same name in `.duckor/skills/<name>.md`.
+Only the bundled `iteration` skill exists today; overrides and the other skills are planned (M4). Each harness phase is driven by a Markdown skill that uses `{{placeholder}}` substitution. To override a bundled skill, put a file with the same name in `.duckor/skills/<name>.md`.
 
 | Skill | Purpose |
 | --- | --- |
@@ -118,6 +141,8 @@ Each harness phase is driven by a Markdown skill that uses `{{placeholder}}` sub
 | `commit` | Prompt for the commit phase |
 
 ## Safety
+
+Hook and commit checks arrive with commits in M2; the rest applies today.
 
 - **Subprocesses:** duckor runs them from argv lists, never through a shell.
 - **Agent permissions:** duckor never passes `--dangerously-skip-permissions`. It passes `--restricted`, and every tool the agent can use must be in the explicit allow-list.
@@ -131,13 +156,13 @@ Each run writes to `.duckor/runs/<YYYYMMDD-HHMMSS-name>/`. Duckor adds this dire
 
 - `history.json`: the task, a config snapshot, the stop reason, totals, and a record for each iteration
 - `scratchpad.md`: state shared between iterations
-- `iter-NNN.log`: the raw agent output and the full gate output for each iteration
+- `iter-NNN.log`: the raw agent output for each iteration (plus full gate output, once gates land)
 
 Exit codes: `0` completed, `1` stopped by a limit or a failure, `2` config or usage error, `130` interrupted.
 
 ## Roadmap
 
-1. **M1: solo loop.** Scaffold, a single-hat config, the agent call, limits, `history.json`, and `duckor run`.
+1. **M1: solo loop** ✅. Scaffold, a single-hat config, the agent call, limits, `history.json`, and `duckor run`.
 2. **M2: backpressure and commits.** Gates and retries, the commit phase and its fallback, and the dirty-tree checks.
 3. **M3: hats and events.** Multi-hat config, glob routing, full validation, and `max_activations`.
 4. **M4: skills and presets.** Skill overrides, bundled presets, `init` and `presets`, and the npm release.
@@ -146,10 +171,12 @@ Not planned for v1: other agent backends, persistent memories, a TUI or web UI, 
 
 ## Development
 
-Planned: ESM TypeScript, with tests in `test/*.test.ts` run by `node --test`.
+ESM TypeScript with no build step for tests: `node --test` runs `test/*.test.ts` directly.
 
 ```sh
 npm ci
-npm test
-npm run build
+npm test          # typecheck + unit tests
+npm run build     # compile to dist/
 ```
+
+The end-to-end test against real `claude` is skipped unless `DUCKOR_E2E=1`.
