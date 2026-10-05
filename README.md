@@ -1,8 +1,15 @@
 # duckor
 
-An autonomous coding loop for a git repository. Duckor keeps a coding agent (`claude -p`) working on a task, one fresh-context iteration at a time, until the work is done and verified.
+An autonomous coding loop for a git repository. Duckor keeps a coding agent working on a task, one fresh-context step at a time, until the work is done and verified.
 
-> **Status: early development.** Milestone 1 (the solo loop) is implemented: `duckor run` drives a single hat until it publishes the completion event or hits a limit. Gates, commits, multiple hats, skill overrides and the other presets are still planned. Sections marked *(planned)* describe the v1 design in the [design spec](docs/superpowers/specs/2026-10-05-duckor-design.md), not current behavior.
+There are two ways to run it:
+
+| | What it is | When to use it |
+| --- | --- | --- |
+| [`duckor` CLI](#usage) | A headless harness around `claude -p`, configured with hats and gates in `duckor.yml` | Unattended runs, scripts, CI |
+| [`duckor-flow` plugin](#claude-code-plugin-duckor-flow) | A Claude Code plugin: `/duckor "<prompt>"` clarifies once, then runs spec → plan → implementation → review on its own | Interactive use in Claude Code |
+
+> **Status: early development.** The `duckor-flow` plugin (v0.1.0) is usable. For the CLI, Milestone 1 (the solo loop) is implemented: `duckor run` drives a single hat until it publishes the completion event or hits a limit. Gates, commits, multiple hats, skill overrides and the other presets are still planned. Sections marked *(planned)* describe the v1 design in the [design spec](docs/superpowers/specs/2026-10-05-duckor-design.md), not current behavior.
 
 Duckor borrows its core ideas from [ralph-orchestrator](https://github.com/mikeyobrien/ralph-orchestrator):
 
@@ -80,9 +87,13 @@ Only `solo` ships today.
 
 ## Claude Code plugin: duckor-flow
 
-The repo also ships a Claude Code plugin that runs the same idea interactively. Give it one prompt. It asks one round of clarifying questions, then on its own writes a spec, writes a plan, and implements the plan task by task, with checks and a review after each task. It finishes with commits on a feature branch in a git worktree and a report. It never runs end-to-end tests. Instead, it lists them for you to run.
+`duckor-flow` brings the same ideas into Claude Code. You give it one prompt. It asks one round of clarifying questions and gets your approval of a short brief. After that it works on its own: it writes a spec, writes a plan, and implements the plan task by task, with checks and a review after each task. It finishes with commits on a feature branch in a git worktree and a `report.md`.
 
-It needs the [superpowers](https://github.com/obra/superpowers) plugin. Install both:
+It never runs end-to-end tests. It finds them, leaves them out, and lists them in the report for you to run.
+
+### Install
+
+`duckor-flow` builds on the [superpowers](https://github.com/obra/superpowers) plugin. Install both:
 
 ```text
 /plugin install superpowers@claude-plugins-official
@@ -90,13 +101,15 @@ It needs the [superpowers](https://github.com/obra/superpowers) plugin. Install 
 /plugin install duckor-flow@duckor
 ```
 
-Usage:
+### Usage
 
 ```text
 /duckor "add rate limiting to the public API"
 /duckor "..." --confirm-spec   # also pause for your approval of the written spec
-/duckor --resume               # continue the newest unfinished run
+/duckor --resume               # continue the newest unfinished or blocked run
 ```
+
+### How a run goes
 
 ```
 setup     worktree + branch duckor/<slug>, discover checks (e2e excluded), baseline run
@@ -107,15 +120,52 @@ execute   per task: implementer -> checks (run by the conductor) -> code-reviewe
 finish    whole-branch review -> one fix round -> checks -> report.md
 ```
 
+- **Fresh context per step.** The main session only orchestrates. Each spec, plan, task and review runs in a fresh subagent that gets file paths, not chat history, and replies with a short status block.
+- **State on disk.** `state.json` is written after every step, which is what makes `--resume` work.
+- **Backpressure.** A task is done only when the checks pass in the conductor's own run (not just in the agent's claim) **and** a reviewer approves. Checks that were already failing before the run are recorded as a baseline and don't block.
+- **Decisions, not questions.** After the brief, agents don't ask you anything. They decide, and every decision is listed in the report with why and what it costs if wrong.
+
+### When it asks, and when it stops
+
+It asks only in the clarify round: questions about the design, plus, when relevant, "which command verifies this project?" (no checks found) and "keep this check?" (a normal check whose command only *looks* like e2e).
+
+A run ends as `completed` or `blocked: <reason>`, always with a report. It blocks when a review loop runs out of rounds, when a task's checks stay red after three fix rounds and one systematic-debugging attempt, or when an agent can't proceed. Completed tasks stay committed. Fix the cause, then run `/duckor --resume`: it picks up at the step that blocked, with that loop's counter reset.
+
+### Checks
+
+Checks come from a `## Checks` section in `CLAUDE.md` or `AGENTS.md`:
+
+```markdown
+## Checks
+- `test`: `npm test`
+- `lint`: `npm run lint`
+```
+
+Without one, they're inferred from the first of `package.json` (`test`, `lint`, `typecheck`, `check`, `format:check`; npm, pnpm or yarn), `Makefile` (`test`, `lint`, `check`), `pyproject.toml` (pytest, ruff), `Cargo.toml` or `go.mod` that has any. Anything named or running e2e, playwright, cypress, integration or acceptance is excluded, unless the word only follows an ignore flag such as `--testPathIgnorePatterns e2e`.
+
+### What's in the plugin
+
 | Part | Name |
 | --- | --- |
 | Command | `/duckor` |
 | Skills | `conductor` (the orchestrator), `autonomous-brainstorming`, `autonomous-writing-plans`, `autonomous-execution` (adapted from superpowers; see [`plugin/UPSTREAM.md`](plugin/UPSTREAM.md)) |
-| Agents | `spec-writer`, `doc-reviewer`, `planner`, `implementer`, `code-reviewer` |
+| Agents | `spec-writer`, `doc-reviewer`, `planner`, `implementer` (sonnet), `code-reviewer`; all but the implementer run on opus |
+| Script | `discover-checks.mjs`, the check discovery above |
 
-Checks come from a `## Checks` section in `CLAUDE.md` or `AGENTS.md` (lines like ``- `test`: `npm test` ``). Without one, they're inferred from `package.json`, `Makefile`, `pyproject.toml`, `Cargo.toml` or `go.mod`. Each run keeps `state.json`, `brief.md`, `scratchpad.md`, check logs and `report.md` in `.duckor/flow/<run>/` inside the worktree. That directory is git-excluded. The plugin never pushes, never uses `--no-verify`, and never weakens tests to get green. The design is in [the plugin spec](docs/superpowers/specs/2026-10-05-duckor-flow-plugin-design.md).
+The spec, the plan and each task's code are committed on `duckor/<slug>`. Run state (`state.json`, `brief.md`, `scratchpad.md`, check logs and `report.md`) lives in `.duckor/flow/<run>/` inside the worktree and is git-excluded. The report covers the outcome, the commits for each task, the decisions made for you, concerns, check results, a manual e2e checklist and next steps.
 
-**Smoke test (manual).** In a scratch git repo with an npm `test` script, run `/duckor "add a --version flag"`. Answer the questions and approve the brief. Then check that the `duckor/<slug>` branch has a spec commit, a plan commit and the task commits, and that `report.md` lists the decisions and a manual e2e section. CI covers only the plugin's structure and its check discovery (`test/plugin.test.ts`, `test/discover-checks.test.ts`).
+**Safety.** The plugin never pushes, merges or opens a PR. It never uses `--no-verify`, `--force` or history rewrites, and never edits, skips or deletes tests to get green (reviewers treat that as critical). Agents only touch files inside the worktree, and text from the repo or from tools is treated as data, not instructions.
+
+The design is in [the plugin spec](docs/superpowers/specs/2026-10-05-duckor-flow-plugin-design.md).
+
+### Smoke test (manual)
+
+1. In a scratch git repo with an npm `test` script, run `/duckor "add a --version flag"`.
+2. Answer the questions and approve the brief.
+3. Check that the `duckor/<slug>` branch has a spec commit, a plan commit and the task commits.
+4. Check that `report.md` lists the decisions and has a manual e2e section.
+
+CI only covers the plugin's structure and check discovery; see Development.
 
 ## Configuration
 
@@ -206,7 +256,9 @@ Exit codes: `0` completed, `1` stopped by a limit or a failure, `2` config or us
 3. **M3: hats and events.** Multi-hat config, glob routing, full validation, and `max_activations`.
 4. **M4: skills and presets.** Skill overrides, bundled presets, `init` and `presets`, and the npm release.
 
-Not planned for v1: other agent backends, persistent memories, a TUI or web UI, human-in-the-loop channels, parallel loops, and resuming a run.
+Not planned for v1 of the CLI: other agent backends, persistent memories, a TUI or web UI, human-in-the-loop channels, parallel loops, and resuming a run. (For an interactive, resumable flow, use the `duckor-flow` plugin.)
+
+Possible next steps for the plugin: a `--pr` flag, and running the plugin's roles as CLI presets.
 
 ## Development
 
@@ -219,3 +271,10 @@ npm run build     # compile to dist/
 ```
 
 The end-to-end test against real `claude` is skipped unless `DUCKOR_E2E=1`.
+
+The plugin's tests are part of `npm test`. `test/plugin.test.ts` checks the manifests, the agent and skill frontmatter, and that every `duckor-flow:` and `superpowers:` reference resolves. `test/discover-checks.test.ts` covers check discovery. To validate the manifests with Claude Code itself:
+
+```sh
+claude plugin validate .         # marketplace
+claude plugin validate ./plugin  # plugin
+```
