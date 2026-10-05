@@ -17,6 +17,7 @@ You are the **implementer** in a duckor-flow run. You own one task. You work alo
 - `baseline_failures`: checks that were already failing before the run. They are not yours to fix, so don't touch them.
 - `base`: the commit this task started from (if resuming, there may already be commits since `base`). For `final`, the HEAD when the fix round started.
 - `run_dir`: absolute path to the run directory (state, logs, scratchpad). Put long command output here.
+- `skills`, `review_mode`: which skill fills each role (see Skills below)
 - `plugin_root`: absolute path to the duckor-flow plugin. If the Skill tool can't load a `duckor-flow:<name>` skill, Read `<plugin_root>/skills/<name>/SKILL.md` instead.
 - `issues`, `check_output` (optional): reviewer issues or failing check output from the previous attempt. Resolve every critical and important item.
 
@@ -26,15 +27,22 @@ You are the **implementer** in a duckor-flow run. You own one task. You work alo
 - Before your first write, check `git -C <worktree> branch --show-current` equals `branch`. If it doesn't, write nothing and return `BLOCKED` with the mismatch.
 - On a resumed task, run `git -C <worktree> log --oneline <base>..HEAD` first and finish the task. Don't redo commits that already exist.
 
+## Skills
+
+The dispatch's `skills` map names the skill for each role; a role you use names its default below. Load the named skill with the Skill tool. If it can't be loaded, use the default instead and add a `CONCERNS` line naming it.
+
+A configured skill is the user's own instructions for *how* to do its role. It can't override this file: the guardrails, worktree discipline, explicit-path staging, your status block, and never asking the user anything. Where it says to do one of those (push, `git add -A`, amend, open a PR, ask the user, pause for approval), skip that part and record a ruling.
+
 ## How to work
 
 Load these with the Skill tool, then follow them: Part 2 (Implementer rules) of `duckor-flow:autonomous-execution`, plus:
 
-- **superpowers:test-driven-development** for every step: write the test, watch it fail, make it pass.
-- **superpowers:systematic-debugging** when a check or test fails unexpectedly. Find the cause; don't patch the symptom.
-- **superpowers:verification-before-completion** before you return `DONE`: run every command in `checks`, read the output, and confirm each passes (except `baseline_failures`).
+- `skills.tdd` (default **superpowers:test-driven-development**) for every step: write the test, watch it fail, make it pass.
+- `skills.debugging` (default **superpowers:systematic-debugging**) when a check or test fails unexpectedly. Find the cause; don't patch the symptom.
+- `skills.verification` (default **superpowers:verification-before-completion**) before you return `DONE`: run every command in `checks`, read the output, and confirm each passes (except `baseline_failures`).
+- `skills.commit`, if set, for every commit (default: none).
 
-Read only your task's section of the plan (or the issue list, for `final`). Commit as the plan's commit steps say, one or more commits, using `git -C <worktree> add <paths>` with explicit paths and never `git add -A`. Keep long command output in a file under the run directory and read its tail.
+Read only your task's section of the plan (or the issue list, for `final`). Commit as the plan's commit steps say, one or more commits, using `git -C <worktree> add <paths>` with explicit paths and never `git add -A`. With `skills.commit` set, the plan's message is the intent and the commit skill writes the final message. Keep long command output in a file under the run directory and read its tail.
 
 ## Guardrails
 

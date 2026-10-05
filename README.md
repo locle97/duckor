@@ -143,6 +143,34 @@ Checks come from a `## Checks` section in `CLAUDE.md` or `AGENTS.md`:
 
 Without one, they're inferred from the first of `package.json` (`test`, `lint`, `typecheck`, `check`, `format:check`; npm, pnpm or yarn), `Makefile` (`test`, `lint`, `check`), `pyproject.toml` (pytest, ruff), `Cargo.toml` or `go.mod` that has any. Anything named or running e2e, playwright, cypress, integration or acceptance is excluded, unless the word only follows an ignore flag such as `--testPathIgnorePatterns e2e`.
 
+### Using your own skills
+
+Some roles in the flow are filled by a skill you can swap for your own, such as your team's commit or review skill. Map roles to skill names in `.duckor/flow.json` in the repo, or in `~/.config/duckor/flow.json` for every repo (`$XDG_CONFIG_HOME` is respected). The project file wins over the user file, and both win over the defaults.
+
+```json
+{
+  "skills": {
+    "commit": "commit",
+    "code-review": "my-team:review"
+  },
+  "review_mode": "augment"
+}
+```
+
+| Role | Default | Used for |
+| --- | --- | --- |
+| `commit` | none (a plain `git commit`) | Writing the message of every spec, plan and task commit |
+| `code-review` | `superpowers:requesting-code-review` | The per-task and final code review |
+| `tdd` | `superpowers:test-driven-development` | How the implementer writes tests and code |
+| `debugging` | `superpowers:systematic-debugging` | Failing tests and checks |
+| `verification` | `superpowers:verification-before-completion` | The implementer's check before it reports done |
+
+A value is any name the Skill tool loads: a personal skill (`~/.claude/skills/<name>`), a project skill (`.claude/skills/<name>`) or a plugin skill (`plugin:skill`). `null` restores the default. `review_mode` is `augment` (the default reviewer checklist plus yours) or `replace` (only yours).
+
+`/duckor` checks the file at setup and stops on an unknown role, a malformed value or a skill that isn't installed. The mapping is saved in `state.json`, so `--resume` keeps it, and the report lists the roles you overrode.
+
+Your skill controls *how* the work is done, such as the message format or the review criteria. It can't change the run's contract: agents still stage explicit paths, never push, amend or use `--no-verify`, never ask you anything after the brief, and reply in the conductor's status format. Agents skip any part of your skill that conflicts with this and record it as a decision. The project file is read from your checkout, not the worktree, so it can stay uncommitted or git-ignored.
+
 ### What's in the plugin
 
 | Part | Name |
@@ -150,7 +178,7 @@ Without one, they're inferred from the first of `package.json` (`test`, `lint`, 
 | Command | `/duckor` |
 | Skills | `conductor` (the orchestrator), `autonomous-brainstorming`, `autonomous-writing-plans`, `autonomous-execution` (adapted from superpowers; see [`plugin/UPSTREAM.md`](plugin/UPSTREAM.md)) |
 | Agents | `spec-writer`, `doc-reviewer`, `planner`, `implementer` (sonnet), `code-reviewer`; all but the implementer run on opus |
-| Script | `discover-checks.mjs`, the check discovery above |
+| Scripts | `discover-checks.mjs` (the check discovery above) and `resolve-skills.mjs` (the skill roles above) |
 
 The spec, the plan and each task's code are committed on `duckor/<slug>`. Run state (`state.json`, `brief.md`, `scratchpad.md`, check logs and `report.md`) lives in `.duckor/flow/<run>/` inside the worktree and is git-excluded. The report covers the outcome, the commits for each task, the decisions made for you, concerns, check results, a manual e2e checklist and next steps.
 
@@ -165,7 +193,7 @@ The design is in [the plugin spec](docs/superpowers/specs/2026-10-05-duckor-flow
 3. Check that the `duckor/<slug>` branch has a spec commit, a plan commit and the task commits.
 4. Check that `report.md` lists the decisions and has a manual e2e section.
 
-CI only covers the plugin's structure and check discovery; see Development.
+CI only covers the plugin's structure, check discovery and skill resolution; see Development.
 
 ## Configuration
 
@@ -272,7 +300,7 @@ npm run build     # compile to dist/
 
 The end-to-end test against real `claude` is skipped unless `DUCKOR_E2E=1`.
 
-The plugin's tests are part of `npm test`. `test/plugin.test.ts` checks the manifests, the agent and skill frontmatter, and that every `duckor-flow:` and `superpowers:` reference resolves. `test/discover-checks.test.ts` covers check discovery. To validate the manifests with Claude Code itself:
+The plugin's tests are part of `npm test`. `test/plugin.test.ts` checks the manifests, the agent and skill frontmatter, and that every `duckor-flow:` and `superpowers:` reference resolves. `test/discover-checks.test.ts` covers check discovery and `test/resolve-skills.test.ts` covers skill resolution. To validate the manifests with Claude Code itself:
 
 ```sh
 claude plugin validate .         # marketplace

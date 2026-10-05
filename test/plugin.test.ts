@@ -5,6 +5,7 @@ import { test } from "node:test";
 
 import { parse } from "yaml";
 
+import { DEFAULTS } from "../plugin/skills/conductor/scripts/resolve-skills.mjs";
 import { ROOT } from "./helpers.ts";
 
 const PLUGIN = path.join(ROOT, "plugin");
@@ -146,7 +147,8 @@ test("the command loads the conductor", () => {
 test("state.md documents every state field", () => {
   const text = fs.readFileSync(path.join(CONDUCTOR, "state.md"), "utf8");
   for (const key of [
-    "version", "run", "prompt", "phase", "blocked_reason", "blocked_phase", "options", "plugin_root", "branch", "worktree", "base_sha",
+    "version", "run", "prompt", "phase", "blocked_reason", "blocked_phase", "options", "plugin_root", "skills", "review_mode",
+    "skill_sources", "branch", "worktree", "base_sha",
     "checks", "excluded_checks", "baseline_failures", "brief", "spec", "plan", "review_rounds", "tasks",
     "decisions", "minor_issues",
   ]) assert.ok(text.includes(`\`${key}\``), `state.md: ${key}`);
@@ -159,4 +161,32 @@ test("the report template has the seven sections", () => {
     "Outcome", "What was built", "Decisions made for you", "Deviations and concerns", "Checks",
     "Manual e2e checklist", "Next steps",
   ]);
+});
+
+test("skill roles match resolve-skills.mjs", () => {
+  const roles = Object.keys(DEFAULTS);
+  for (const name of Object.values(DEFAULTS)) {
+    if (name !== null) assert.ok(KNOWN_SUPERPOWERS.includes(name.replace(/^superpowers:/, "")), `default ${name}`);
+  }
+  const conductor = fs.readFileSync(path.join(CONDUCTOR, "SKILL.md"), "utf8");
+  const table = conductor.slice(conductor.indexOf("## Skill roles"));
+  const documented = [...table.matchAll(/^\| `([a-z-]+)` \| (.+?) \|/gm)].map((m) => [m[1], m[2]] as const);
+  assert.deepEqual(documented.map(([r]) => r), roles);
+  for (const [role, def] of documented) {
+    const want = DEFAULTS[role as keyof typeof DEFAULTS];
+    if (want !== null) assert.ok(def.includes(want), `conductor: default for ${role}`);
+  }
+  for (const file of markdownFiles(PLUGIN)) {
+    const text = fs.readFileSync(file, "utf8");
+    for (const m of text.matchAll(/`skills\.([a-z-]+)`/g)) assert.ok(roles.includes(m[1]), `${file}: unknown role ${m[1]}`);
+  }
+});
+
+test("agents that load skills are given the skills map", () => {
+  for (const name of Object.keys(AGENTS)) {
+    const body = fs.readFileSync(path.join(PLUGIN, "agents", `${name}.md`), "utf8");
+    if (!/`skills\.[a-z-]+`/.test(body)) continue;
+    assert.match(body, /- `skills`, `review_mode`:/, `${name}: skills input`);
+    assert.match(body, /## Skills/, `${name}: skills contract`);
+  }
 });

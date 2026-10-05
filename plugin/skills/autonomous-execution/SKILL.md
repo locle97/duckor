@@ -37,7 +37,7 @@ For each task `n` whose status is not `done`, in order:
    - `NEEDS_FIX` → `fix_rounds += 1` and re-dispatch the implementer with the issues.
    - Implementer `BLOCKED` → treat as a failed round with its summary as the input.
 6. **Limits:** after 3 fix rounds:
-   - Last round failed on **checks** (or implementer `BLOCKED`): make one extra attempt. Dispatch the implementer with the latest failure and the instruction "Use superpowers:systematic-debugging; find the root cause before changing code." If it's still not checks-green and approved, block with `task <n>`.
+   - Last round failed on **checks** (or implementer `BLOCKED`): make one extra attempt. Dispatch the implementer with the latest failure and the instruction "Use the `skills.debugging` skill (default superpowers:systematic-debugging); find the root cause before changing code." If it's still not checks-green and approved, block with `task <n>`.
    - Last round failed on **review** (checks pass): block with `task <n> review`.
 
    Blocking sets the task's status to `blocked` and follows the conductor's Blocking section.
@@ -55,10 +55,11 @@ After the last task:
 ## Part 2: Implementer rules
 
 - Read the scratchpad, then your task (or the issue list for `final`). Read the spec section the task cites, not the whole plan.
-- Work the steps in order under **superpowers:test-driven-development**: write the test, run it, see it fail for the expected reason, implement, run it, see it pass.
-- Compare every command against the plan's `Expected:` line. A mismatch means either the code is wrong (use **superpowers:systematic-debugging**) or the plan is wrong (make the smallest change that satisfies the spec, and add a ruling).
-- Commit as the plan says, with explicit paths.
-- **Completion contract**, before `DONE`, with evidence from this session (**superpowers:verification-before-completion**):
+- Skills come from the dispatch's `skills` map (the conductor's Skill roles); the names below are the defaults.
+- Work the steps in order under the `skills.tdd` skill (default **superpowers:test-driven-development**): write the test, run it, see it fail for the expected reason, implement, run it, see it pass.
+- Compare every command against the plan's `Expected:` line. A mismatch means either the code is wrong (use the `skills.debugging` skill, default **superpowers:systematic-debugging**) or the plan is wrong (make the smallest change that satisfies the spec, and add a ruling).
+- Commit as the plan says, with explicit paths. If `skills.commit` is set, load it and let it write the message, with the plan's message as the intent; staging stays the plan's explicit paths.
+- **Completion contract**, before `DONE`, with evidence from this session (the `skills.verification` skill, default **superpowers:verification-before-completion**):
   - every test the task names exists and ran;
   - every command in `checks` was run after your last change and passes (except `baseline_failures`);
   - every deviation has a ruling.
