@@ -58,9 +58,11 @@ Write `brief.md` in the run directory:
 
 ### 4. Get approval: the only gate
 
-Show the brief in full and ask, with AskUserQuestion, "Approve this brief and run autonomously from here?" with the options **Approve**, **Revise** and **Cancel**.
+First print the brief in full as ordinary message text (the whole `brief.md` content, every section, rendered as markdown), then give the path to `brief.md`. The user may be on a surface where they can't open worktree files, so a path or a summary in the question is never a substitute. Do not call AskUserQuestion until the full brief has been output in the conversation.
 
-- **Revise:** ask what to change in one open question, update the brief, and show it again.
+Then ask, with AskUserQuestion, "Approve this brief and run autonomously from here?" with the options **Approve**, **Revise** and **Cancel**. Keep the question text short; it must not carry the brief.
+
+- **Revise:** ask what to change in one open question, update the brief, and print the full updated brief again before asking for approval.
 - **Cancel:** stop. The conductor prints how to remove the worktree.
 - **Approve:** clarification is over. From now on, nothing asks the user anything (except the optional `--confirm-spec` gate).
 

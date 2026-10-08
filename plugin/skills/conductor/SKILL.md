@@ -65,7 +65,7 @@ Spec path: `<worktree>/docs/superpowers/specs/<YYYY-MM-DD>-<slug>-design.md`.
 2. Dispatch **duckor-flow:doc-reviewer** with mode `spec`.
 3. On `NEEDS_FIX`: `review_rounds.spec += 1`. If it's 3 or less, go back to step 1 with the issues. Otherwise, block with `spec_review`.
 4. On `APPROVED`: add minor issues to `minor_issues`.
-5. If `options.confirm_spec` is set, show the spec path and summary and ask Approve / Revise / Cancel. **Revise:** collect the user's notes, set `review_rounds.spec = 0`, and go back to step 1 with the notes as `issues`. **Cancel:** block with `cancelled at spec`.
+5. If `options.confirm_spec` is set, print the full spec as message text (plus its path; the user may not be able to open worktree files), then ask Approve / Revise / Cancel with a short question. **Revise:** collect the user's notes, set `review_rounds.spec = 0`, and go back to step 1 with the notes as `issues`. **Cancel:** block with `cancelled at spec`.
 6. Write state, and move to phase `plan`.
 
 ## Phase 4: Plan
